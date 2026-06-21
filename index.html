@@ -186,13 +186,64 @@
                  console.error("Gagal mengambil data Spreadsheet:", err);
                  setIsLoadingProducts(false);
               });
+
+            // Fetch Jurnal Transaksi dari Spreadsheet
+            const salesCsvUrl = "https://docs.google.com/spreadsheets/d/19muvmAtdRxYJckDuXADBz3PbDaSQKtbLy3fwEwUwGcU/export?format=csv&gid=797738335";
+            fetch(salesCsvUrl)
+              .then(res => res.text())
+              .then(csvText => {
+                const parseCSVRow = (str) => {
+                  let result = [], current = '', inQuotes = false;
+                  for (let i = 0; i < str.length; i++) {
+                    let char = str[i];
+                    if (inQuotes) {
+                      if (char === '"') {
+                         if (str[i+1] === '"') { current += '"'; i++; } else { inQuotes = false; }
+                      } else { current += char; }
+                    } else {
+                      if (char === '"') { inQuotes = true; }
+                      else if (char === ',') { result.push(current); current = ''; }
+                      else { current += char; }
+                    }
+                  }
+                  result.push(current);
+                  return result.map(s => s.trim());
+                };
+
+                const parseIDR = (str) => {
+                   if (!str) return 0;
+                   let clean = str.toString().replace(/Rp/gi, '').replace(/\./g, '').replace(/\s/g, '').replace(/,/g, '.');
+                   return parseFloat(clean) || 0;
+                };
+
+                const rows = csvText.split('\n');
+                const fetchedSales = [];
+                for (let i = 1; i < rows.length; i++) {
+                  if (!rows[i].trim()) continue;
+                  const row = parseCSVRow(rows[i]);
+                  if (!row[0]) continue; // Pastikan tanggal ada
+                  
+                  fetchedSales.push({
+                    id: i,
+                    date: row[0],
+                    province: row[1] || '',
+                    area: row[2] || '',
+                    productName: row[3] || '',
+                    qty: parseInt(row[4]) || 0,
+                    totalCost: parseIDR(row[5]),
+                    revenue: parseIDR(row[6]),
+                    profit: parseIDR(row[7])
+                  });
+                }
+                // Reverse agar yang terbaru di atas
+                setSales(fetchedSales.reverse());
+              })
+              .catch(err => console.error("Gagal mengambil data Penjualan:", err));
+
           }, []);
 
           // --- STATE: DATA PENJUALAN ---
-          const [sales, setSales] = useState([
-            { id: 1, productId: 1, date: '2023-10-01', area: 'Pelalawan, Riau', qty: 5000, laborPacking: 20000, pilihanPackingCost: 15000 },
-            { id: 2, productId: 2, date: '2023-10-02', area: 'Sintang, Kalimantan Barat', qty: 2500, laborPacking: 20000, pilihanPackingCost: 15000 },
-          ]);
+          const [sales, setSales] = useState([]);
 
           // --- DERIVED DATA (ANALYTICS) ---
           const dashboardData = useMemo(() => {
@@ -202,32 +253,26 @@
             const productBreakdown = {};
 
             sales.forEach(sale => {
-              const product = products.find(p => p.id === sale.productId);
-              if (!product) return;
+              totalRevenue += sale.revenue;
+              totalHPP += sale.totalCost;
 
-              const revenue = product.price * sale.qty;
-              // Biaya total = HPP per kampil * qty + biaya tenaga kerja packing + biaya box packing
-              const cost = (product.hpp * sale.qty) + (sale.laborPacking || 0) + (sale.pilihanPackingCost || 0);
-              const profit = revenue - cost;
-
-              totalRevenue += revenue;
-              totalHPP += cost;
+              const locationKey = `${sale.area}, ${sale.province}`;
 
               // Area Breakdown
-              if (!areaBreakdown[sale.area]) {
-                areaBreakdown[sale.area] = { revenue: 0, qty: 0, profit: 0 };
+              if (!areaBreakdown[locationKey]) {
+                areaBreakdown[locationKey] = { revenue: 0, qty: 0, profit: 0 };
               }
-              areaBreakdown[sale.area].revenue += revenue;
-              areaBreakdown[sale.area].qty += sale.qty;
-              areaBreakdown[sale.area].profit += profit;
+              areaBreakdown[locationKey].revenue += sale.revenue;
+              areaBreakdown[locationKey].qty += sale.qty;
+              areaBreakdown[locationKey].profit += sale.profit;
 
               // Product Breakdown
-              if (!productBreakdown[product.name]) {
-                productBreakdown[product.name] = { revenue: 0, qty: 0, profit: 0 };
+              if (!productBreakdown[sale.productName]) {
+                productBreakdown[sale.productName] = { revenue: 0, qty: 0, profit: 0 };
               }
-              productBreakdown[product.name].revenue += revenue;
-              productBreakdown[product.name].qty += sale.qty;
-              productBreakdown[product.name].profit += profit;
+              productBreakdown[sale.productName].revenue += sale.revenue;
+              productBreakdown[sale.productName].qty += sale.qty;
+              productBreakdown[sale.productName].profit += sale.profit;
             });
 
             const totalProfit = totalRevenue - totalHPP;
@@ -252,20 +297,20 @@
 
           // --- COMPONENT: SIDEBAR ---
           const Sidebar = () => (
-            <div className="w-64 bg-gradient-to-b from-slate-900 to-slate-950 text-slate-300 flex flex-col h-full border-r border-slate-800 shadow-xl z-10" style={fontStyle}>
-              <div className="p-6 border-b border-slate-800/50">
-                <h1 className="text-2xl font-semibold text-white flex items-center gap-3">
+            <div className="w-full md:w-64 shrink-0 bg-gradient-to-b from-slate-900 to-slate-950 text-slate-300 flex flex-col md:h-full border-b md:border-b-0 md:border-r border-slate-800 shadow-xl z-10" style={fontStyle}>
+              <div className="p-4 md:p-6 border-b border-slate-800/50 flex justify-between items-center md:items-start md:flex-col">
+                <h1 className="text-xl md:text-2xl font-semibold text-white flex items-center gap-2 md:gap-3">
                   <div className="p-1.5 bg-gradient-to-br from-slate-700 to-slate-800 rounded-lg shadow-sm border border-slate-600/30">
-                    <TrendingUp size={20} className="text-white" />
+                    <TrendingUp size={18} className="text-white w-5 h-5 md:w-auto md:h-auto" />
                   </div>
                   RetailPro
                 </h1>
-                <p className="text-slate-400 text-xs mt-2 uppercase tracking-widest font-medium">Enterprise Suite</p>
+                <p className="hidden md:block text-slate-400 text-xs mt-2 uppercase tracking-widest font-medium">Enterprise Suite</p>
               </div>
-              <nav className="flex-1 p-4 space-y-1">
+              <nav className="p-2 md:p-4 flex flex-row md:flex-col gap-2 md:gap-0 md:space-y-1 overflow-x-auto md:flex-1">
                 <button
                   onClick={() => setActiveTab('dashboard')}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-md text-sm font-medium transition-all duration-200 ${
+                  className={`whitespace-nowrap flex-1 md:w-full flex items-center justify-center md:justify-start gap-2 md:gap-3 px-3 md:px-4 py-2.5 rounded-md text-xs md:text-sm font-medium transition-all duration-200 ${
                     activeTab === 'dashboard' ? 'bg-gradient-to-r from-slate-800 to-slate-700 text-white shadow-sm border border-slate-700/50' : 'hover:bg-slate-800/50 hover:text-slate-100'
                   }`}
                 >
@@ -274,7 +319,7 @@
                 </button>
                 <button
                   onClick={() => setActiveTab('products')}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-md text-sm font-medium transition-all duration-200 ${
+                  className={`whitespace-nowrap flex-1 md:w-full flex items-center justify-center md:justify-start gap-2 md:gap-3 px-3 md:px-4 py-2.5 rounded-md text-xs md:text-sm font-medium transition-all duration-200 ${
                     activeTab === 'products' ? 'bg-gradient-to-r from-slate-800 to-slate-700 text-white shadow-sm border border-slate-700/50' : 'hover:bg-slate-800/50 hover:text-slate-100'
                   }`}
                 >
@@ -283,7 +328,7 @@
                 </button>
                 <button
                   onClick={() => setActiveTab('sales')}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-md text-sm font-medium transition-all duration-200 ${
+                  className={`whitespace-nowrap flex-1 md:w-full flex items-center justify-center md:justify-start gap-2 md:gap-3 px-3 md:px-4 py-2.5 rounded-md text-xs md:text-sm font-medium transition-all duration-200 ${
                     activeTab === 'sales' ? 'bg-gradient-to-r from-slate-800 to-slate-700 text-white shadow-sm border border-slate-700/50' : 'hover:bg-slate-800/50 hover:text-slate-100'
                   }`}
                 >
@@ -300,7 +345,7 @@
             const maxAreaRevenue = sortedAreas.length > 0 ? sortedAreas[0].revenue : 1;
 
             return (
-              <div className="p-8 space-y-6 animate-in fade-in" style={fontStyle}>
+              <div className="p-4 md:p-8 space-y-6 animate-in fade-in" style={fontStyle}>
                 <div className="mb-6">
                   <h2 className="text-2xl font-semibold text-slate-800">Ringkasan Bisnis</h2>
                   <p className="text-slate-500 text-sm mt-1">Laporan analitik performa penjualan dan profitabilitas terkini.</p>
@@ -440,20 +485,20 @@
             const [newProduct, setNewProduct] = useState({
               name: '', materialCost: '', laborSortir: '', price: '', labelCost: '', kemasanPlastikTR: '', kemasanLocis: '', kemasanKaret: '', kemasanSerbuk: '', kemasanPlastikLokas: '', sertifikat: '', sertifikatCost: '', biayaKirimTipe: '', biayaKirimCost: '',
               // Simulasi fields
-              simQty: 1, laborPacking: '', pilihanPackingCost: ''
+              simQty: '', laborPacking: '', pilihanPackingCost: ''
             });
 
             const handleAddProduct = (e) => {
               e.preventDefault();
               const mCost = parseFloat(newProduct.materialCost) || 0;
               const lCost = parseFloat(newProduct.laborSortir) || 0;
-              const labelC = newProduct.name === 'TR' ? (parseFloat(newProduct.labelCost) || 0) : 0;
+              const labelC = newProduct.name === 'Local (Graded)' ? (parseFloat(newProduct.labelCost) || 0) : 0;
               
-              const pTR = (newProduct.name === 'Dura (Lokal)' || newProduct.name === 'Tenera') ? 0 : (parseFloat(newProduct.kemasanPlastikTR) || 0);
-              const locis = parseFloat(newProduct.kemasanLocis) || 0;
+              const pTR = (newProduct.name === 'Uncertified Dura' || newProduct.name === 'Tenera (DxP)') ? 0 : (parseFloat(newProduct.kemasanPlastikTR) || 0);
+              const locis = newProduct.name === 'Uncertified Dura' ? 0 : (parseFloat(newProduct.kemasanLocis) || 0);
               const karet = parseFloat(newProduct.kemasanKaret) || 0;
               const serbuk = parseFloat(newProduct.kemasanSerbuk) || 0;
-              const pLokas = newProduct.name === 'TR' ? 0 : (parseFloat(newProduct.kemasanPlastikLokas) || 0);
+              const pLokas = newProduct.name === 'Local (Graded)' ? 0 : (parseFloat(newProduct.kemasanPlastikLokas) || 0);
               
               const kemasanTotal = pTR + locis + karet + serbuk + pLokas; 
               
@@ -488,7 +533,6 @@
               // Kirim data ke Spreadsheet untuk form Produk
               fetch(SCRIPT_URL, {
                 method: "POST",
-                mode: "no-cors",
                 headers: {
                   "Content-Type": "text/plain;charset=utf-8",
                 },
@@ -508,17 +552,18 @@
                     certCost,                                         // 11. Harga Sertifikat (Angka murni)
                     newProduct.biayaKirimTipe || "-",                 // 12. Tipe Biaya Kirim
                     bKirim,                                           // 13. Nominal Ongkir (Angka murni)
-                    parseInt(newProduct.simQty) || 1,                 // 14. Volume (Angka murni)
+                    parseInt(newProduct.simQty) || 0,                 // 14. Volume (Angka murni)
                     parseFloat(newProduct.laborPacking) || 0,         // 15. Tenaga Kerja Packing (Angka murni)
                     parseFloat(newProduct.pilihanPackingCost) || 0    // 16. Pilihan Packing (Angka murni)
                   ]
                 })
-              }).then(() => console.log("Request pengiriman Produk selesai."))
+              }).then(res => res.json())
+                .then(data => console.log("Response Server:", data))
                 .catch(err => console.error("Error submitting product to spreadsheet:", err));
               
               setNewProduct({ 
                 name: '', materialCost: '', laborSortir: '', price: '', labelCost: '', kemasanPlastikTR: '', kemasanLocis: '', kemasanKaret: '', kemasanSerbuk: '', kemasanPlastikLokas: '', sertifikat: '', sertifikatCost: '', biayaKirimTipe: '', biayaKirimCost: '',
-                simQty: 1, laborPacking: '', pilihanPackingCost: '' 
+                simQty: '', laborPacking: '', pilihanPackingCost: '' 
               });
             };
 
@@ -527,7 +572,7 @@
             };
 
             return (
-              <div className="p-8 space-y-6 animate-in fade-in" style={fontStyle}>
+              <div className="p-4 md:p-8 space-y-6 animate-in fade-in" style={fontStyle}>
                 <div className="mb-6">
                   <h2 className="text-2xl font-semibold text-slate-800">Katalog Produk & HPP</h2>
                   <p className="text-slate-500 text-sm mt-1">Kelola data induk produk, komponen modal (HPP Per Kampil), dan margin keuntungan.</p>
@@ -554,9 +599,9 @@
                             onChange={e => setNewProduct({...newProduct, name: e.target.value})}
                           >
                             <option value="" disabled>-- Pilih Nama Produk --</option>
-                            <option value="Dura (Lokal)">Dura (Lokal)</option>
-                            <option value="Tenera">Tenera</option>
-                            <option value="TR">TR</option>
+                            <option value="Tenera (DxP)">Tenera (DxP)</option>
+                            <option value="Uncertified Dura">Uncertified Dura</option>
+                            <option value="Local (Graded)">Local (Graded)</option>
                           </select>
                         </div>
                         <div>
@@ -615,49 +660,54 @@
                       <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 border-b border-slate-200 pb-2">3. Kelengkapan Kemasan & Label</h4>
                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 items-end">
                         <div>
-                          <label className="block text-xs font-medium text-slate-600 mb-1.5">Plastik TR</label>
+                          <label className="block text-xs font-medium text-slate-600 mb-1.5">Kantong Kemas Local (Graded)</label>
                           <select 
                             className="w-full px-3 py-2 bg-white border border-slate-300 text-slate-800 text-sm rounded-md focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 outline-none transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed" 
-                            value={(newProduct.name === 'Dura (Lokal)' || newProduct.name === 'Tenera') ? "0" : newProduct.kemasanPlastikTR} 
+                            value={(newProduct.name === 'Uncertified Dura' || newProduct.name === 'Tenera (DxP)') ? "0" : newProduct.kemasanPlastikTR} 
                             onChange={e => setNewProduct({...newProduct, kemasanPlastikTR: e.target.value})}
-                            disabled={newProduct.name === 'Dura (Lokal)' || newProduct.name === 'Tenera'}
+                            disabled={newProduct.name === 'Uncertified Dura' || newProduct.name === 'Tenera (DxP)'}
                           >
                             <option value="" disabled>Pilih</option><option value="0">0</option><option value="200">200</option><option value="1000">1.000</option><option value="1500">1.500</option><option value="2000">2.000</option><option value="2500">2.500</option><option value="3000">3.000</option>
                           </select>
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-slate-600 mb-1.5">Locis</label>
-                          <select className="w-full px-3 py-2 bg-white border border-slate-300 text-slate-800 text-sm rounded-md focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 outline-none transition-colors" value={newProduct.kemasanLocis} onChange={e => setNewProduct({...newProduct, kemasanLocis: e.target.value})}>
-                            <option value="" disabled>Pilih</option><option value="200">200</option><option value="1000">1.000</option><option value="1500">1.500</option><option value="2000">2.000</option><option value="2500">2.500</option><option value="3000">3.000</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-slate-600 mb-1.5">Karet</label>
-                          <select className="w-full px-3 py-2 bg-white border border-slate-300 text-slate-800 text-sm rounded-md focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 outline-none transition-colors" value={newProduct.kemasanKaret} onChange={e => setNewProduct({...newProduct, kemasanKaret: e.target.value})}>
-                            <option value="" disabled>Pilih</option><option value="200">200</option><option value="1000">1.000</option><option value="1500">1.500</option><option value="2000">2.000</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-slate-600 mb-1.5">Serbuk</label>
-                          <select className="w-full px-3 py-2 bg-white border border-slate-300 text-slate-800 text-sm rounded-md focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 outline-none transition-colors" value={newProduct.kemasanSerbuk} onChange={e => setNewProduct({...newProduct, kemasanSerbuk: e.target.value})}>
-                            <option value="" disabled>Pilih</option><option value="200">200</option><option value="1000">1.000</option><option value="1500">1.500</option><option value="2000">2.000</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-slate-600 mb-1.5">Plastik Lokal</label>
+                          <label className="block text-xs font-medium text-slate-600 mb-1.5">Segel Keamanan (Locis)</label>
                           <select 
                             className="w-full px-3 py-2 bg-white border border-slate-300 text-slate-800 text-sm rounded-md focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 outline-none transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed" 
-                            value={newProduct.name === 'TR' ? "0" : newProduct.kemasanPlastikLokas} 
+                            value={newProduct.name === 'Uncertified Dura' ? "0" : newProduct.kemasanLocis} 
+                            onChange={e => setNewProduct({...newProduct, kemasanLocis: e.target.value})}
+                            disabled={newProduct.name === 'Uncertified Dura'}
+                          >
+                            <option value="" disabled>Pilih</option><option value="0">0</option><option value="200">200</option><option value="1000">1.000</option><option value="1500">1.500</option><option value="2000">2.000</option><option value="2500">2.500</option><option value="3000">3.000</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 mb-1.5">Pengikat Karet Polimer</label>
+                          <select className="w-full px-3 py-2 bg-white border border-slate-300 text-slate-800 text-sm rounded-md focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 outline-none transition-colors" value={newProduct.kemasanKaret} onChange={e => setNewProduct({...newProduct, kemasanKaret: e.target.value})}>
+                            <option value="" disabled>Pilih</option><option value="0">0</option><option value="200">200</option><option value="1000">1.000</option><option value="1500">1.500</option><option value="2000">2.000</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 mb-1.5">Media Serbuk Pelembap</label>
+                          <select className="w-full px-3 py-2 bg-white border border-slate-300 text-slate-800 text-sm rounded-md focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 outline-none transition-colors" value={newProduct.kemasanSerbuk} onChange={e => setNewProduct({...newProduct, kemasanSerbuk: e.target.value})}>
+                            <option value="" disabled>Pilih</option><option value="0">0</option><option value="200">200</option><option value="1000">1.000</option><option value="1500">1.500</option><option value="2000">2.000</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 mb-1.5">Kantong Kemas Uncertified Dura</label>
+                          <select 
+                            className="w-full px-3 py-2 bg-white border border-slate-300 text-slate-800 text-sm rounded-md focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 outline-none transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed" 
+                            value={newProduct.name === 'Local (Graded)' ? "0" : newProduct.kemasanPlastikLokas} 
                             onChange={e => setNewProduct({...newProduct, kemasanPlastikLokas: e.target.value})}
-                            disabled={newProduct.name === 'TR'}
+                            disabled={newProduct.name === 'Local (Graded)'}
                           >
                             <option value="" disabled>Pilih</option><option value="0">0</option><option value="200">200</option><option value="1000">1.000</option><option value="1500">1.500</option><option value="2000">2.000</option>
                           </select>
                         </div>
                         
-                        {newProduct.name === 'TR' && (
+                        {newProduct.name === 'Local (Graded)' && (
                           <div className="col-span-2 md:col-span-1 lg:col-span-1">
-                            <label className="block text-xs font-medium text-slate-600 mb-1.5">Biaya Label TR</label>
+                            <label className="block text-xs font-medium text-slate-600 mb-1.5">Biaya Label Sertifikasi</label>
                             <select 
                               required
                               className="w-full px-3 py-2 bg-white border border-slate-300 text-slate-800 text-sm rounded-md focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 outline-none transition-colors border-l-4 border-l-slate-700"
@@ -665,6 +715,8 @@
                               onChange={e => setNewProduct({...newProduct, labelCost: e.target.value})}
                             >
                               <option value="" disabled>Pilih</option>
+                              <option value="0">0</option>
+                              <option value="1000">Rp 1.000</option>
                               {Array.from({length: 11}, (_, i) => 2000 + (i * 100)).map(val => (
                                 <option key={val} value={val}>{formatRupiah(val)}</option>
                               ))}
@@ -691,7 +743,7 @@
                             >
                               <option value="" disabled>Pilih Sertifikat</option>
                               <option value="Sertifikat Lokal">Sertifikat Lokal</option>
-                              <option value="Sertifikat TR">Sertifikat TR</option>
+                              <option value="Sertifikat Local (Graded)">Sertifikat Local (Graded)</option>
                               <option value="Tidak Memakai Sertifikat">Tidak Memakai Sertifikat</option>
                             </select>
                           </div>
@@ -705,6 +757,7 @@
                                 onChange={e => setNewProduct({...newProduct, sertifikatCost: e.target.value})}
                               >
                                 <option value="" disabled>Pilih Harga</option>
+                                <option value="0">0</option>
                                 {newProduct.sertifikat === 'Sertifikat Lokal' && (
                                   <>
                                     <option value="40000">40.000</option>
@@ -714,7 +767,7 @@
                                     <option value="60000">60.000</option>
                                   </>
                                 )}
-                                {newProduct.sertifikat === 'Sertifikat TR' && (
+                                {newProduct.sertifikat === 'Sertifikat Local (Graded)' && (
                                   <>
                                     <option value="50000">50.000</option>
                                     <option value="55000">55.000</option>
@@ -771,8 +824,8 @@
                           <input 
                             type="number" min="1" required
                             className="w-full px-3 py-2 bg-white border border-slate-300 text-slate-800 text-sm rounded-md focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-colors"
-                            value={newProduct.simQty || 1}
-                            onChange={e => setNewProduct({...newProduct, simQty: parseInt(e.target.value) || 1})}
+                            value={newProduct.simQty}
+                            onChange={e => setNewProduct({...newProduct, simQty: e.target.value})}
                           />
                         </div>
                         <div>
@@ -797,9 +850,10 @@
                             onChange={e => setNewProduct({...newProduct, pilihanPackingCost: e.target.value})}
                           >
                             <option value="" disabled>Pilih Packing</option>
-                            <option value="400000">Kotak super (400.000)</option>
+                            <option value="400000">Kotak Local (Graded) Super (400.000)</option>
                             <option value="85000">Kotak Stereform (85.000)</option>
-                            <option value="250000">Kotak TR (250.000)</option>
+                            <option value="70000">Kotak Stereform Kecil (70.000)</option>
+                            <option value="250000">Kotak Local (Graded) (250.000)</option>
                             <option value="15000">Kotak Biasa (15.000)</option>
                             <option value="0">Tanpa Packing (0)</option>
                           </select>
@@ -818,12 +872,12 @@
                   {(newProduct.materialCost || newProduct.laborSortir || newProduct.price || newProduct.labelCost || newProduct.kemasanPlastikTR || newProduct.kemasanLocis || newProduct.kemasanKaret || newProduct.kemasanSerbuk || newProduct.kemasanPlastikLokas || newProduct.sertifikatCost || newProduct.biayaKirimCost || newProduct.biayaKirimTipe) ? (
                     (() => {
                       // HPP Dasar Per Kampil
-                      const hppPerKampil = (parseFloat(newProduct.materialCost)||0) + (parseFloat(newProduct.laborSortir)||0) + (newProduct.name === 'TR' ? (parseFloat(newProduct.labelCost)||0) : 0) + ((newProduct.name === 'Dura (Lokal)' || newProduct.name === 'Tenera') ? 0 : (parseFloat(newProduct.kemasanPlastikTR)||0)) + (parseFloat(newProduct.kemasanLocis)||0) + (parseFloat(newProduct.kemasanKaret)||0) + (parseFloat(newProduct.kemasanSerbuk)||0) + (newProduct.name === 'TR' ? 0 : (parseFloat(newProduct.kemasanPlastikLokas)||0)) + (parseFloat(newProduct.sertifikatCost)||0) + (newProduct.biayaKirimTipe === 'Dibebankan ke pembeli' ? 0 : (parseFloat(newProduct.biayaKirimCost)||0));
+                      const hppPerKampil = (parseFloat(newProduct.materialCost)||0) + (parseFloat(newProduct.laborSortir)||0) + (newProduct.name === 'Local (Graded)' ? (parseFloat(newProduct.labelCost)||0) : 0) + ((newProduct.name === 'Uncertified Dura' || newProduct.name === 'Tenera (DxP)') ? 0 : (parseFloat(newProduct.kemasanPlastikTR)||0)) + (newProduct.name === 'Uncertified Dura' ? 0 : (parseFloat(newProduct.kemasanLocis)||0)) + (parseFloat(newProduct.kemasanKaret)||0) + (parseFloat(newProduct.kemasanSerbuk)||0) + (newProduct.name === 'Local (Graded)' ? 0 : (parseFloat(newProduct.kemasanPlastikLokas)||0)) + (parseFloat(newProduct.sertifikatCost)||0) + (newProduct.biayaKirimTipe === 'Dibebankan ke pembeli' ? 0 : (parseFloat(newProduct.biayaKirimCost)||0));
                       
                       const currentPrice = parseFloat(newProduct.price)||0;
                       
                       // Values untuk Simulasi
-                      const simQty = newProduct.simQty || 1;
+                      const simQty = parseInt(newProduct.simQty) || 0;
                       const laborPack = parseFloat(newProduct.laborPacking)||0;
                       const boxPack = parseFloat(newProduct.pilihanPackingCost)||0;
                       
@@ -954,13 +1008,13 @@
           // --- VIEW: SALES TRANSACTIONS ---
           const SalesView = () => {
             const [newSale, setNewSale] = useState({
-              productId: '', date: new Date().toISOString().split('T')[0], province: '', area: '', qty: 1,
+              productId: '', date: new Date().toISOString().split('T')[0], province: '', area: '', qty: '',
               laborPacking: '', pilihanPackingCost: ''
             });
 
             const handleAddSale = (e) => {
               e.preventDefault();
-              if (!newSale.productId || !newSale.province || !newSale.area || newSale.qty <= 0) {
+              if (!newSale.productId || !newSale.province || !newSale.area || !newSale.qty || newSale.qty <= 0) {
                 alert('Mohon lengkapi data penjualan!');
                 return;
               }
@@ -969,43 +1023,47 @@
               const p = products.find(prod => prod.id === parseInt(newSale.productId));
               if (!p) return;
 
-              setSales([{
-                id: newId,
-                productId: parseInt(newSale.productId),
-                date: newSale.date,
-                area: `${newSale.area}, ${newSale.province}`,
-                qty: parseInt(newSale.qty),
-                laborPacking: parseFloat(newSale.laborPacking) || 0,
-                pilihanPackingCost: parseFloat(newSale.pilihanPackingCost) || 0
-              }, ...sales]);
-
               // Kalkulasi data untuk dikirim ke Spreadsheet
               const revenue = p.price * newSale.qty;
               const pengeluaranTotal = (p.hpp * newSale.qty) + (parseFloat(newSale.laborPacking) || 0) + (parseFloat(newSale.pilihanPackingCost) || 0);
               const profit = revenue - pengeluaranTotal;
 
+              setSales([{
+                id: newId,
+                date: newSale.date,
+                province: newSale.province,
+                area: newSale.area,
+                productName: p.name,
+                qty: parseInt(newSale.qty),
+                totalCost: pengeluaranTotal,
+                revenue: revenue,
+                profit: profit
+              }, ...sales]);
+
               // Kirim data ke Spreadsheet untuk form Penjualan dengan 6 Kolom
               fetch(SCRIPT_URL, {
                 method: "POST",
-                mode: "no-cors",
                 headers: {
                   "Content-Type": "text/plain;charset=utf-8",
                 },
                 body: JSON.stringify({
-                  sheetName: "Jurnal transaksi",
+                  sheetName: "Jurnal Transaksi",
                   rowData: [
                     newSale.date, 
-                    `${newSale.area}, ${newSale.province}`, 
-                    `${p.name} (${newSale.qty} Kampil)`, 
+                    newSale.province, 
+                    newSale.area, 
+                    p.name, 
+                    parseInt(newSale.qty), 
                     pengeluaranTotal, 
                     revenue, 
                     profit
                   ]
                 })
-              }).then(() => console.log("Request pengiriman Transaksi Penjualan selesai."))
+              }).then(res => res.json())
+                .then(data => console.log("Response Server:", data))
                 .catch(err => console.error("Error submitting sale to spreadsheet:", err));
 
-              setNewSale({ ...newSale, qty: 1, area: '', laborPacking: '', pilihanPackingCost: '' }); 
+              setNewSale({ ...newSale, qty: '', area: '', laborPacking: '', pilihanPackingCost: '' }); 
             };
 
             const handleDeleteSale = (id) => {
@@ -1013,7 +1071,7 @@
             };
 
             return (
-              <div className="p-8 space-y-6 animate-in fade-in" style={fontStyle}>
+              <div className="p-4 md:p-8 space-y-6 animate-in fade-in" style={fontStyle}>
                 <div className="mb-6">
                    <h2 className="text-2xl font-semibold text-slate-800">Pencatatan Penjualan</h2>
                    <p className="text-slate-500 text-sm mt-1">Input data transaksi penjualan dan masukan biaya Packing untuk pesanan ini.</p>
@@ -1108,9 +1166,10 @@
                         onChange={e => setNewSale({...newSale, pilihanPackingCost: e.target.value})}
                       >
                         <option value="" disabled>-- Pilih Kotak --</option>
-                        <option value="400000">Kotak super (400.000)</option>
+                        <option value="400000">Kotak Local (Graded) Super (400.000)</option>
                         <option value="85000">Kotak Stereform (85.000)</option>
-                        <option value="250000">Kotak TR (250.000)</option>
+                        <option value="70000">Kotak Stereform Kecil (70.000)</option>
+                        <option value="250000">Kotak Local (Graded) (250.000)</option>
                         <option value="15000">Kotak Biasa (15.000)</option>
                         <option value="0">Tanpa Packing (0)</option>
                       </select>
@@ -1153,29 +1212,21 @@
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {sales.map((s) => {
-                          const p = products.find(prod => prod.id === s.productId);
-                          if (!p) return null;
-                          
-                          const revenue = p.price * s.qty;
-                          const pengeluaranTotal = (p.hpp * s.qty) + s.laborPacking + s.pilihanPackingCost;
-                          const profit = revenue - pengeluaranTotal;
-
                           return (
                             <tr key={s.id} className="hover:bg-slate-50 transition-colors">
                               <td className="px-4 py-3 text-slate-600">{s.date}</td>
                               <td className="px-4 py-3 font-medium text-slate-800">
-                                {s.area}
+                                {s.area}, {s.province}
                               </td>
                               <td className="px-4 py-3">
-                                <p className="text-slate-700 font-medium">{p.name}</p>
+                                <p className="text-slate-700 font-medium">{s.productName}</p>
                                 <p className="text-xs text-slate-500 mt-0.5">Vol: {s.qty} Kampil</p>
                               </td>
                               <td className="px-4 py-3 text-right">
-                                <p className="font-medium text-rose-600">{formatRupiah(pengeluaranTotal)}</p>
-                                <p className="text-[10px] text-slate-400 mt-0.5">Pack: {formatRupiah(s.laborPacking + s.pilihanPackingCost)}</p>
+                                <p className="font-medium text-rose-600">{formatRupiah(s.totalCost)}</p>
                               </td>
-                              <td className="px-4 py-3 text-right font-medium text-slate-800">{formatRupiah(revenue)}</td>
-                              <td className="px-4 py-3 text-right font-bold text-emerald-600">{formatRupiah(profit)}</td>
+                              <td className="px-4 py-3 text-right font-medium text-slate-800">{formatRupiah(s.revenue)}</td>
+                              <td className="px-4 py-3 text-right font-bold text-emerald-600">{formatRupiah(s.profit)}</td>
                               <td className="px-4 py-3 text-center">
                                 <button onClick={() => handleDeleteSale(s.id)} className="text-slate-400 hover:text-slate-700 transition-colors" title="Hapus Transaksi">
                                   <Trash2 size={16} />
@@ -1187,7 +1238,7 @@
                         {sales.length === 0 && (
                           <tr>
                             <td colSpan="7" className="px-4 py-8 text-center text-slate-500 text-sm">
-                              Belum ada entri transaksi penjualan.
+                              Belum ada entri transaksi penjualan atau sedang memuat data.
                             </td>
                           </tr>
                         )}
@@ -1200,7 +1251,7 @@
           };
 
           return (
-            <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-800">
+            <div className="flex flex-col md:flex-row h-screen bg-slate-50 overflow-hidden text-slate-800">
               <Sidebar />
               <div className="flex-1 overflow-y-auto">
                 {activeTab === 'dashboard' && <DashboardView />}
