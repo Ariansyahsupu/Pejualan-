@@ -556,10 +556,10 @@
 
             const { totalRevenue, totalHPP, totalOpex, totalDikembalikan, labaKotor, totalProfit, sortedProvinces, sortedProducts, trendData, sisaModal, sortedOpex, hppBreakdown } = dashboardData;
             
-            const pengembalianModal = totalProfit > 0 ? totalProfit * 0.10 : 0;
-            const labaBagiHasil = totalProfit > 0 ? totalProfit - pengembalianModal : 0;
-            const porsiPengelola = labaBagiHasil * 0.70;
-            const porsiInvestor = labaBagiHasil * 0.30;
+            const pengembalianModal = labaKotor > 0 ? labaKotor * 0.10 : 0;
+            const labaBersihAkhir = labaKotor - pengembalianModal;
+            const porsiPengelola = labaBersihAkhir > 0 ? labaBersihAkhir * 0.70 : 0;
+            const porsiInvestor = labaBersihAkhir > 0 ? labaBersihAkhir * 0.30 : 0;
             
             const COLORS = ['#171717', '#404040', '#737373', '#a3a3a3', '#d4d4d4', '#e5e5e5'];
             const cardClasses = "bg-white p-6 md:p-8 rounded-2xl border border-neutral-200/60 shadow-[0_4px_24px_rgba(0,0,0,0.02)] flex flex-col justify-between transition-shadow hover:shadow-[0_4px_24px_rgba(0,0,0,0.06)] min-w-0";
@@ -648,14 +648,14 @@
                         </div>
                         <div className="min-w-0">
                           <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Laba Bersih Akhir</p>
-                          <p className="text-lg sm:text-xl font-bold tracking-tighter text-neutral-900 whitespace-nowrap">{formatRupiah(totalProfit)}</p>
+                          <p className="text-xl font-bold tracking-tighter text-neutral-900 whitespace-nowrap">{formatRupiah(labaBersihAkhir)}</p>
                         </div>
                       </div>
 
                       <div className="mt-8 pt-6 border-t border-neutral-100/60 grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
                         <div className="min-w-0">
-                          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Laba Keseluruhan</p>
-                          <p className="text-[13px] font-bold text-neutral-700 whitespace-nowrap">{formatRupiah(totalProfit)}</p>
+                          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Laba Kotor</p>
+                          <p className="text-[13px] font-bold text-neutral-700 whitespace-nowrap">{formatRupiah(labaKotor)}</p>
                         </div>
                         <div className="min-w-0">
                           <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Pengembalian (10%)</p>
