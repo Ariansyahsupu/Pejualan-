@@ -69,7 +69,7 @@
         import { 
           LayoutDashboard, Package, ShoppingCart, TrendingUp,
           Save, Trash2, PieChart as PieChartIcon, BarChart3, ChevronDown, 
-          ArrowLeft, CreditCard, Wallet
+          ArrowLeft, CreditCard, Wallet, Archive
         } from 'lucide-react';
         import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
@@ -130,6 +130,7 @@
           const [sales, setSales] = useState([]);
           const [expenses, setExpenses] = useState([]);
           const [capitalReturns, setCapitalReturns] = useState([]);
+          const [stocks, setStocks] = useState([]);
 
           useEffect(() => {
             // 1. Fetch Produk
@@ -370,6 +371,51 @@
               })
               .catch(err => console.error("Gagal mengambil data Pengembalian Modal:", err));
 
+            // 5. Fetch SOH / Stock
+            const stockCsvUrl = "https://docs.google.com/spreadsheets/d/19muvmAtdRxYJckDuXADBz3PbDaSQKtbLy3fwEwUwGcU/export?format=csv&gid=1356877357";
+            fetch(stockCsvUrl)
+              .then(res => res.text())
+              .then(csvText => {
+                const parseCSVRow = (str) => {
+                  let result = [], current = '', inQuotes = false;
+                  for (let i = 0; i < str.length; i++) {
+                    let char = str[i];
+                    if (inQuotes) {
+                      if (char === '"') {
+                         if (str[i+1] === '"') { current += '"'; i++; } else { inQuotes = false; }
+                      } else { current += char; }
+                    } else {
+                      if (char === '"') { inQuotes = true; }
+                      else if (char === ',') { result.push(current); current = ''; }
+                      else { current += char; }
+                    }
+                  }
+                  result.push(current);
+                  return result.map(s => s.trim());
+                };
+
+                const rows = csvText.split('\n');
+                const fetchedStocks = [];
+                for (let i = 1; i < rows.length; i++) {
+                  if (!rows[i].trim()) continue;
+                  const row = parseCSVRow(rows[i]);
+                  if (!row[0]) continue;
+
+                  fetchedStocks.push({
+                    id: i,
+                    date: row[0] || '',
+                    pelaksana: row[1] || '-',
+                    goodIssued: parseInt(row[2]) || 0,
+                    goodReceived: parseInt(row[3]) || 0,
+                    returnStock: parseInt(row[4]) || 0,
+                    shrinkage: parseInt(row[5]) || 0,
+                    soh: parseInt(row[6]) || 0
+                  });
+                }
+                setStocks(fetchedStocks.reverse());
+              })
+              .catch(err => console.error("Gagal mengambil data SOH:", err));
+
           }, []);
 
           const Sidebar = () => (
@@ -428,6 +474,15 @@
                 >
                   <Wallet size={18} className={activeTab === 'capital' ? 'text-white' : 'text-neutral-400'} />
                   <span>Pengembalian Modal</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('stock')}
+                  className={`whitespace-nowrap flex-1 md:w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-[13px] font-semibold transition-all duration-200 ${
+                    activeTab === 'stock' ? 'bg-neutral-900 text-white shadow-sm' : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900'
+                  }`}
+                >
+                  <Archive size={18} className={activeTab === 'stock' ? 'text-white' : 'text-neutral-400'} />
+                  <span>SOH / Stock</span>
                 </button>
               </nav>
             </div>
@@ -1228,8 +1283,8 @@
                         </select>
                       </div>
                       <div>
-                        <label className={labelClass}>Biaya Marketing (5% Omset)</label>
-                        <input type="text" className="w-full px-4 py-2.5 bg-neutral-100/50 border border-neutral-200 text-neutral-900 text-[13px] rounded-xl font-bold tracking-tight shadow-inner cursor-not-allowed" value={(() => { const p = products.find(prod => prod.id === parseInt(newSale.productId)); if (!p || !newSale.qty) return formatRupiah(0); return formatRupiah(p.price * parseInt(newSale.qty) * 0.05); })()} disabled readOnly />
+                        <label className={labelClass}>Biaya Marketing (10% Omset)</label>
+                        <input type="text" className="w-full px-4 py-2.5 bg-neutral-100/50 border border-neutral-200 text-neutral-900 text-[13px] rounded-xl font-bold tracking-tight shadow-inner cursor-not-allowed" value={(() => { const p = products.find(prod => prod.id === parseInt(newSale.productId)); if (!p || !newSale.qty) return formatRupiah(0); return formatRupiah(p.price * parseInt(newSale.qty) * 0.10); })()} disabled readOnly />
                       </div>
                       <div><label className={labelClass}>Biaya Kirim (Rp)</label><input type="number" min="0" className={inputClass} value={newSale.biayaKirim} onChange={e => setNewSale({...newSale, biayaKirim: e.target.value})} placeholder="0 (Isi jika ada)" /></div>
                       <div><label className={labelClass}>Tanggal Transaksi</label><input type="date" required className={inputClass} value={newSale.date} onChange={e => setNewSale({...newSale, date: e.target.value})} /></div>
@@ -1473,6 +1528,182 @@
             );
           };
 
+          const StockView = () => {
+            const [newStock, setNewStock] = useState({
+              date: new Date().toISOString().split('T')[0], pelaksana: '', transactionType: '', qty: '', pricePerKampil: ''
+            });
+
+            // 1. Mengambil data SOH terakhir (Paling atas di array stocks karena sudah di-reverse saat fetch)
+            const latestSoh = stocks.length > 0 ? stocks[0].soh : 0;
+
+            // 2. Kalkulasi Otomatis (Nol-kan yang tidak dipilih)
+            let currentGi = 0, currentGr = 0, currentRet = 0, currentShrink = 0;
+            const currentQty = parseInt(newStock.qty) || 0;
+            const currentPrice = parseFloat(newStock.pricePerKampil) || 0;
+
+            if (newStock.transactionType === 'goodIssued') currentGi = currentQty;
+            if (newStock.transactionType === 'goodReceived') currentGr = currentQty;
+            if (newStock.transactionType === 'returnStock') currentRet = currentQty;
+            if (newStock.transactionType === 'shrinkage') currentShrink = currentQty;
+
+            // 3. Kalkulasi SOH terbaru & Value
+            const computedSoh = latestSoh + currentGr + currentRet - currentGi - currentShrink;
+            const computedValue = computedSoh * currentPrice;
+
+            const handleAddStock = (e) => {
+              e.preventDefault();
+              if (!newStock.date || !newStock.pelaksana || !newStock.transactionType || !newStock.qty || !newStock.pricePerKampil) return;
+
+              setStocks([{ 
+                id: Date.now(), date: newStock.date, pelaksana: newStock.pelaksana, 
+                goodIssued: currentGi, goodReceived: currentGr, returnStock: currentRet, shrinkage: currentShrink, soh: computedSoh,
+                pricePerKampil: currentPrice, uom: 'Kampil', value: computedValue
+              }, ...stocks]);
+
+              try {
+                fetch(SCRIPT_URL, {
+                  method: "POST", 
+                  mode: "no-cors",
+                  headers: { "Content-Type": "text/plain;charset=utf-8" },
+                  body: JSON.stringify({ sheetName: "Stock", gid: "1356877357", rowData: [newStock.date, newStock.pelaksana, currentGi, currentGr, currentRet, currentShrink, computedSoh, currentPrice, 'Kampil', computedValue] })
+                }).catch(err => console.error("Fetch Network Error:", err));
+              } catch (error) {
+                console.error("Fetch Execution Error:", error);
+              }
+              
+              setNewStock({ ...newStock, transactionType: '', qty: '', pricePerKampil: '' }); 
+            };
+
+            const handleDeleteStock = (id) => { setStocks(stocks.filter(s => s.id !== id)); };
+
+            const [selectedMonth, setSelectedMonth] = useState('');
+            const availableMonths = useMemo(() => { const m = new Set(stocks.map(s => s.date.substring(0, 7)).filter(d => d.length === 7)); return Array.from(m).sort().reverse(); }, [stocks]);
+            const formatMonth = (ym) => { const [y, m] = ym.split('-'); const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']; return `${months[parseInt(m, 10)-1]} ${y}`; };
+            const filteredStocks = useMemo(() => { if (!selectedMonth) return stocks; return stocks.filter(s => s.date.substring(0, 7) === selectedMonth); }, [stocks, selectedMonth]);
+
+            const inputClass = "w-full px-4 py-2.5 bg-neutral-50/50 border border-neutral-200 text-neutral-900 text-[13px] rounded-xl focus:outline-none focus:ring-4 focus:ring-neutral-900/5 focus:border-neutral-900 transition-all placeholder:text-neutral-400 font-semibold";
+            const selectClass = "w-full px-4 py-2.5 bg-neutral-50/50 border border-neutral-200 text-neutral-900 text-[13px] rounded-xl focus:outline-none focus:ring-4 focus:ring-neutral-900/5 focus:border-neutral-900 transition-all disabled:bg-neutral-100/50 disabled:text-neutral-400 font-semibold appearance-none cursor-pointer";
+            const labelClass = "block text-[12px] font-bold text-neutral-700 mb-2 truncate";
+            const cardClasses = "bg-white p-6 md:p-8 rounded-2xl border border-neutral-200/60 shadow-[0_4px_24px_rgba(0,0,0,0.02)]";
+
+            return (
+              <div className="p-4 sm:p-6 md:p-10 space-y-8 animate-in fade-in max-w-7xl mx-auto">
+                <div>
+                   <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight text-neutral-900">Pemantauan Stok (SOH)</h2>
+                   <p className="text-neutral-500 text-[13px] mt-1.5 font-medium">Catat dan pantau pergerakan fisik barang beserta nilainya (Value) secara otomatis.</p>
+                </div>
+                <div className={cardClasses}>
+                   <div className="mb-8"><h3 className="text-lg font-semibold text-neutral-900 tracking-tight">Formulir Mutasi Stok</h3></div>
+                  <form onSubmit={handleAddStock} className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                      <div className="lg:col-span-2">
+                        <label className={labelClass}>Tanggal Mutasi</label>
+                        <input type="date" required className={inputClass} value={newStock.date} onChange={e => setNewStock({...newStock, date: e.target.value})} />
+                      </div>
+                      <div className="lg:col-span-2">
+                        <label className={labelClass}>Nama Pelaksana</label>
+                        <select required className={selectClass} value={newStock.pelaksana} onChange={e => setNewStock({...newStock, pelaksana: e.target.value})}>
+                          <option value="" disabled>-- Pilih Pelaksana --</option>
+                          <option value="Sukmariyanto">Sukmariyanto</option>
+                          <option value="Ariansyah Supu">Ariansyah Supu</option>
+                        </select>
+                      </div>
+                      
+                      <div className="lg:col-span-2">
+                        <label className={labelClass}>Jenis Transaksi</label>
+                        <select required className={selectClass} value={newStock.transactionType} onChange={e => setNewStock({...newStock, transactionType: e.target.value})}>
+                          <option value="" disabled>-- Pilih Jenis --</option>
+                          <option value="goodIssued">Good Issued (Pengeluaran)</option>
+                          <option value="goodReceived">Good Received (Penerimaan)</option>
+                          <option value="returnStock">Return (Pengembalian Masuk)</option>
+                          <option value="shrinkage">Shrinkage (Penyusutan/Hilang)</option>
+                        </select>
+                      </div>
+                      <div className="lg:col-span-1">
+                        <label className={labelClass}>Jumlah Unit</label>
+                        <input type="number" min="1" required className={inputClass} value={newStock.qty} onChange={e => setNewStock({...newStock, qty: e.target.value})} placeholder="0" />
+                      </div>
+                      <div className="lg:col-span-1">
+                        <label className={labelClass}>Harga / Kampil (Rp)</label>
+                        <input type="number" min="0" required className={inputClass} value={newStock.pricePerKampil} onChange={e => setNewStock({...newStock, pricePerKampil: e.target.value})} placeholder="0" />
+                      </div>
+
+                      <div className="lg:col-span-4 grid grid-cols-1 sm:grid-cols-2 gap-4 bg-neutral-50/50 p-4 rounded-xl border border-neutral-100">
+                        <div>
+                          <label className={labelClass}>SOH Terupdate (Otomatis)</label>
+                          <input 
+                            type="text" 
+                            className="w-full px-4 py-2.5 bg-white border border-neutral-200 text-neutral-900 text-[14px] rounded-xl font-bold tracking-tight shadow-inner cursor-not-allowed" 
+                            value={`${computedSoh} Unit (SOH Lama: ${latestSoh})`} 
+                            disabled readOnly 
+                          />
+                        </div>
+                        <div>
+                          <label className={labelClass}>Total Value Stock (Rp)</label>
+                          <input 
+                            type="text" 
+                            className="w-full px-4 py-2.5 bg-white border border-neutral-200 text-green-700 text-[14px] rounded-xl font-bold tracking-tight shadow-inner cursor-not-allowed" 
+                            value={formatRupiah(computedValue)} 
+                            disabled readOnly 
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex justify-end pt-6 border-t border-neutral-100/80">
+                      <button type="submit" className="bg-neutral-900 hover:bg-black text-white text-[13px] font-bold py-3 px-8 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] whitespace-nowrap"><Save size={16} /> Catat Mutasi</button>
+                    </div>
+                  </form>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-neutral-200/60 shadow-[0_4px_24px_rgba(0,0,0,0.02)] overflow-hidden">
+                   <div className="p-4 sm:p-6 md:p-8 border-b border-neutral-100/80 flex flex-col sm:flex-row sm:items-center justify-between bg-white gap-4">
+                     <div>
+                       <h3 className="text-lg font-semibold text-neutral-900 tracking-tight">Riwayat Stok (SOH)</h3>
+                     </div>
+                     <select className="w-full sm:w-auto appearance-none bg-neutral-50/80 border border-neutral-200 text-neutral-900 text-[13px] font-bold rounded-xl px-4 py-2.5 outline-none focus:ring-4 focus:ring-neutral-900/5 cursor-pointer shadow-sm transition-all" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
+                       <option value="">Semua Bulan</option>{availableMonths.map(ym => (<option key={ym} value={ym}>{formatMonth(ym)}</option>))}
+                     </select>
+                   </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse min-w-[950px]">
+                      <thead className="bg-transparent border-b border-neutral-200/60 text-neutral-500 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">
+                        <tr>
+                          <th className="px-4 py-4">Tanggal</th>
+                          <th className="px-4 py-4">Pelaksana</th>
+                          <th className="px-3 py-4 text-right">G. Issued</th>
+                          <th className="px-3 py-4 text-right">G. Received</th>
+                          <th className="px-3 py-4 text-right">Return</th>
+                          <th className="px-3 py-4 text-right">Shrinkage</th>
+                          <th className="px-4 py-4 text-right text-neutral-900">SOH</th>
+                          <th className="px-4 py-4 text-right">Harga/Kampil</th>
+                          <th className="px-4 py-4 text-right">Total Value</th>
+                          <th className="px-3 py-4 text-center">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-neutral-100/80 text-[13px] font-semibold">
+                        {filteredStocks.map((s) => (
+                          <tr key={s.id} className="hover:bg-neutral-50/50 transition-colors group">
+                            <td className="px-4 py-4 text-neutral-500 whitespace-nowrap tabular-nums">{s.date}</td>
+                            <td className="px-4 py-4 font-bold text-neutral-900 whitespace-nowrap">{s.pelaksana}</td>
+                            <td className="px-3 py-4 text-right tabular-nums">{s.goodIssued > 0 ? <span className="text-neutral-900 bg-neutral-100 px-2 py-0.5 rounded">{s.goodIssued}</span> : s.goodIssued}</td>
+                            <td className="px-3 py-4 text-right tabular-nums">{s.goodReceived > 0 ? <span className="text-neutral-900 bg-neutral-100 px-2 py-0.5 rounded">{s.goodReceived}</span> : s.goodReceived}</td>
+                            <td className="px-3 py-4 text-right tabular-nums">{s.returnStock > 0 ? <span className="text-neutral-900 bg-neutral-100 px-2 py-0.5 rounded">{s.returnStock}</span> : s.returnStock}</td>
+                            <td className="px-3 py-4 text-right tabular-nums">{s.shrinkage > 0 ? <span className="text-red-500 bg-red-50 px-2 py-0.5 rounded">{s.shrinkage}</span> : s.shrinkage}</td>
+                            <td className="px-4 py-4 text-right font-bold text-neutral-900 tabular-nums text-[13px] bg-neutral-50/30">{s.soh}</td>
+                            <td className="px-4 py-4 text-right text-neutral-600 tabular-nums whitespace-nowrap">{formatRupiah(s.pricePerKampil)}</td>
+                            <td className="px-4 py-4 text-right font-bold text-green-700 tabular-nums whitespace-nowrap">{formatRupiah(s.value)}</td>
+                            <td className="px-3 py-4 text-center"><button onClick={() => handleDeleteStock(s.id)} className="text-neutral-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button></td>
+                          </tr>
+                        ))}
+                        {filteredStocks.length === 0 && (<tr><td colSpan="10" className="px-6 py-12 text-center text-neutral-400 font-medium text-[13px]">Tidak ada riwayat stok.</td></tr>)}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            );
+          };
+
           return (
             <div className="flex flex-col md:flex-row h-screen bg-[#fafafa] overflow-hidden text-neutral-900 font-sans selection:bg-neutral-900 selection:text-white">
               <Sidebar />
@@ -1482,6 +1713,7 @@
                 {activeTab === 'sales' && <SalesView />}
                 {activeTab === 'expenses' && <ExpensesView />}
                 {activeTab === 'capital' && <CapitalReturnView />}
+                {activeTab === 'stock' && <StockView />}
               </div>
             </div>
           );
