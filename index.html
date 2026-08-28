@@ -536,7 +536,7 @@
               const opexBreakdown = {};
 
               const hppBreakdown = {
-                "Bahan Baku": 0, "Biaya Operasional (Tenaga)": 0, "Biaya Peralatan & Kemasan": 0, "Biaya Marketing": 0, "Biaya Pengiriman": 0, "Biaya Admin Transfer Bank": 0
+                "Bahan Baku": 0, "Biaya Operasional (Tenaga)": 0, "Biaya Peralatan & Kemasan": 0, "Biaya Marketing": 0, "Biaya Pengiriman": 0
               };
 
               filteredSales.forEach(sale => {
@@ -572,11 +572,6 @@
                 const cat = exp.category || 'Lainnya';
                 if (!opexBreakdown[cat]) { opexBreakdown[cat] = 0; }
                 opexBreakdown[cat] += exp.amount;
-
-                if (cat === 'Biaya Admin Transfer Bank') {
-                  totalHPP += exp.amount;
-                  hppBreakdown["Biaya Admin Transfer Bank"] += exp.amount;
-                }
               });
 
               capitalReturns.forEach(c => {
