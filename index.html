@@ -496,6 +496,9 @@
             const [isHppDropdownOpen, setIsHppDropdownOpen] = useState(false);
             const [selectedProvince, setSelectedProvince] = useState(null);
 
+            const latestSoh = stocks.length > 0 ? stocks[0].soh : 0;
+            const latestValue = stocks.length > 0 ? (stocks[0].value || 0) : 0;
+
             const availableMonths = useMemo(() => {
               const m = new Set(sales.map(s => s.date.substring(0, 7)).filter(d => d.length === 7));
               return Array.from(m).sort().reverse();
@@ -729,47 +732,67 @@
                     </div>
                   </div>
 
-                  <div className={cardClasses}>
-                    <div className="flex justify-between items-center mb-6">
-                      <h3 className="text-sm font-semibold text-neutral-900 flex items-center gap-2 tracking-tight uppercase">
-                        Operasional & Modal Awal
-                      </h3>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 animate-in fade-in duration-300">
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Biaya Opex</p>
-                        <p className="text-xl font-bold tracking-tighter text-neutral-900 whitespace-nowrap">{formatRupiah(totalOpex)}</p>
+                  <div className="flex flex-col gap-6 md:gap-8 min-w-0">
+                    <div className={cardClasses}>
+                      <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-sm font-semibold text-neutral-900 flex items-center gap-2 tracking-tight uppercase">
+                          Operasional & Modal
+                        </h3>
                       </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest truncate">Sisa Modal</p>
-                          <span className="text-[9px] bg-neutral-100 text-neutral-500 px-1.5 py-0.5 rounded-md font-bold border border-neutral-200">15Jt</span>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 animate-in fade-in duration-300">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Biaya Opex</p>
+                          <p className="text-xl font-bold tracking-tighter text-neutral-900 whitespace-nowrap">{formatRupiah(totalOpex)}</p>
                         </div>
-                        <p className={`text-xl font-bold tracking-tighter whitespace-nowrap ${sisaModal < 0 ? 'text-red-600' : 'text-neutral-900'}`}>{formatRupiah(sisaModal)}</p>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest truncate">Sisa Modal</p>
+                            <span className="text-[9px] bg-neutral-100 text-neutral-500 px-1.5 py-0.5 rounded-md font-bold border border-neutral-200">15Jt</span>
+                          </div>
+                          <p className={`text-xl font-bold tracking-tighter whitespace-nowrap ${sisaModal < 0 ? 'text-red-600' : 'text-neutral-900'}`}>{formatRupiah(sisaModal)}</p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Modal Kembali</p>
+                          <p className="text-xl font-bold tracking-tighter text-neutral-900 whitespace-nowrap">{formatRupiah(totalDikembalikan)}</p>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Modal Kembali</p>
-                        <p className="text-xl font-bold tracking-tighter text-neutral-900 whitespace-nowrap">{formatRupiah(totalDikembalikan)}</p>
+
+                      <div className="mt-8 pt-6 border-t border-neutral-100/60">
+                        <h4 className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-4 flex items-center justify-between">
+                          <span>Rincian Pengeluaran Modal</span>
+                          <span className="text-neutral-900 font-bold whitespace-nowrap">{formatRupiah(totalOpex)}</span>
+                        </h4>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                          {sortedOpex.map((op, idx) => (
+                            <div key={idx} className="bg-neutral-50/50 p-3.5 rounded-xl border border-neutral-100 transition-colors hover:bg-neutral-100 min-w-0">
+                              <p className="text-[11px] font-semibold text-neutral-500 mb-1 truncate" title={op.name}>{op.name}</p>
+                              <p className="text-[13px] font-bold tracking-tight text-neutral-900 whitespace-nowrap">{formatRupiah(op.amount)}</p>
+                            </div>
+                          ))}
+                          {sortedOpex.length === 0 && (
+                            <div className="col-span-full text-xs font-medium text-neutral-400 py-2">
+                              Tidak ada pengeluaran operasional dicatat.
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
 
-                    <div className="mt-8 pt-6 border-t border-neutral-100/60">
-                      <h4 className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-4 flex items-center justify-between">
-                        <span>Rincian Pengeluaran Modal</span>
-                        <span className="text-neutral-900 font-bold whitespace-nowrap">{formatRupiah(totalOpex)}</span>
-                      </h4>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                        {sortedOpex.map((op, idx) => (
-                          <div key={idx} className="bg-neutral-50/50 p-3.5 rounded-xl border border-neutral-100 transition-colors hover:bg-neutral-100 min-w-0">
-                            <p className="text-[11px] font-semibold text-neutral-500 mb-1 truncate" title={op.name}>{op.name}</p>
-                            <p className="text-[13px] font-bold tracking-tight text-neutral-900 whitespace-nowrap">{formatRupiah(op.amount)}</p>
-                          </div>
-                        ))}
-                        {sortedOpex.length === 0 && (
-                          <div className="col-span-full text-xs font-medium text-neutral-400 py-2">
-                            Tidak ada pengeluaran operasional dicatat.
-                          </div>
-                        )}
+                    <div className={cardClasses}>
+                      <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-sm font-semibold text-neutral-900 flex items-center gap-2 tracking-tight uppercase">
+                          SOH & Nilai Stok
+                        </h3>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4 sm:gap-6 animate-in fade-in duration-300">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">SOH Terkini (Fisik)</p>
+                          <p className="text-xl font-bold tracking-tighter text-neutral-900 whitespace-nowrap">{latestSoh} <span className="text-sm font-semibold text-neutral-500">Kampil</span></p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Total Value Stok</p>
+                          <p className="text-xl font-bold tracking-tighter text-neutral-900 whitespace-nowrap">{formatRupiah(latestValue)}</p>
+                        </div>
                       </div>
                     </div>
                   </div>
