@@ -495,6 +495,7 @@
             const [isMonthDropdownOpen, setIsMonthDropdownOpen] = useState(false);
             const [isHppDropdownOpen, setIsHppDropdownOpen] = useState(false);
             const [selectedProvince, setSelectedProvince] = useState(null);
+            const [salesStatusFilter, setSalesStatusFilter] = useState('All');
 
             const latestSoh = stocks.length > 0 ? stocks[0].soh : 0;
             const latestValue = stocks.length > 0 ? (stocks[0].value || 0) : 0;
@@ -530,6 +531,8 @@
               let totalHPP = 0;
               let totalOpex = 0;
               let totalDikembalikan = 0;
+              let closeRevenue = 0;
+              let closeHPP = 0;
 
               const provBreakdown = {};
               const productBreakdown = {};
@@ -543,6 +546,11 @@
                 totalRevenue += sale.revenue;
                 const hppTransaksi = (sale.coaBahan || 0) + (sale.coaTenaga || 0) + (sale.coaPeralatan || 0) + (sale.coaMarketing || 0) + (sale.coaKirim || 0);
                 totalHPP += hppTransaksi;
+
+                if (sale.paymentStatus === 'Close' || sale.paymentStatus === 'close') {
+                  closeRevenue += sale.revenue;
+                  closeHPP += hppTransaksi;
+                }
 
                 if (!provBreakdown[sale.province]) { provBreakdown[sale.province] = { revenue: 0, qty: 0, cities: {}, products: {} }; }
                 provBreakdown[sale.province].revenue += sale.revenue;
@@ -611,15 +619,48 @@
               });
               const trendData = Object.values(monthlyTrendMap).sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 
-              return { totalRevenue, totalHPP, totalOpex, totalDikembalikan, labaKotor, totalProfit, profitMargin, sortedProvinces, sortedProducts, trendData, modalAwal, sisaModal, sortedOpex, hppBreakdown };
+              return { totalRevenue, totalHPP, totalOpex, totalDikembalikan, labaKotor, totalProfit, profitMargin, sortedProvinces, sortedProducts, trendData, modalAwal, sisaModal, sortedOpex, hppBreakdown, closeRevenue, closeHPP };
             }, [sales, selectedMonths, expenses, capitalReturns]);
 
-            const { totalRevenue, totalHPP, totalOpex, totalDikembalikan, labaKotor, totalProfit, sortedProvinces, sortedProducts, trendData, sisaModal, sortedOpex, hppBreakdown } = dashboardData;
+            const { totalRevenue, totalHPP, totalOpex, totalDikembalikan, labaKotor, totalProfit, sortedProvinces, sortedProducts, trendData, sisaModal, sortedOpex, hppBreakdown, closeRevenue, closeHPP } = dashboardData;
             
-            const pengembalianModal = labaKotor > 0 ? labaKotor * 0.10 : 0;
-            const labaBersihAkhir = labaKotor - pengembalianModal;
-            const porsiPengelola = labaBersihAkhir > 0 ? labaBersihAkhir * 0.70 : 0;
-            const porsiInvestor = labaBersihAkhir > 0 ? labaBersihAkhir * 0.30 : 0;
+            const cardPerformanceData = useMemo(() => {
+              let tRev = 0, tHpp = 0, tHppBreakdown = {
+                "Bahan Baku": 0, "Biaya Operasional (Tenaga)": 0, "Biaya Peralatan & Kemasan": 0, "Biaya Marketing": 0, "Biaya Pengiriman": 0
+              };
+              
+              let filteredSales = sales;
+              if (selectedMonths.length > 0) {
+                filteredSales = sales.filter(s => selectedMonths.includes(s.date.substring(0, 7)));
+              }
+              
+              filteredSales.forEach(sale => {
+                const sStatus = sale.paymentStatus?.toLowerCase() || 'open';
+                const matchStatus = salesStatusFilter === 'All' || 
+                                   (salesStatusFilter === 'Close' && sStatus === 'close') ||
+                                   (salesStatusFilter === 'Open' && sStatus === 'open');
+                
+                if (matchStatus) {
+                  tRev += sale.revenue;
+                  const hppTransaksi = (sale.coaBahan || 0) + (sale.coaTenaga || 0) + (sale.coaPeralatan || 0) + (sale.coaMarketing || 0) + (sale.coaKirim || 0);
+                  tHpp += hppTransaksi;
+                  
+                  tHppBreakdown["Bahan Baku"] += sale.coaBahan || 0;
+                  tHppBreakdown["Biaya Operasional (Tenaga)"] += sale.coaTenaga || 0;
+                  tHppBreakdown["Biaya Peralatan & Kemasan"] += sale.coaPeralatan || 0;
+                  tHppBreakdown["Biaya Marketing"] += sale.coaMarketing || 0;
+                  tHppBreakdown["Biaya Pengiriman"] += sale.coaKirim || 0;
+                }
+              });
+
+              const tLabaKotor = tRev - tHpp;
+              const tPengembalian = tLabaKotor > 0 ? tLabaKotor * 0.10 : 0;
+              const tLabaBersih = tLabaKotor - tPengembalian;
+              const tPengelola = tLabaBersih > 0 ? tLabaBersih * 0.70 : 0;
+              const tInvestor = tLabaBersih > 0 ? tLabaBersih * 0.30 : 0;
+              
+              return { tRev, tHpp, tHppBreakdown, tLabaKotor, tLabaBersih, tPengembalian, tPengelola, tInvestor };
+            }, [sales, selectedMonths, salesStatusFilter]);
             
             const COLORS = ['#171717', '#404040', '#737373', '#a3a3a3', '#d4d4d4', '#e5e5e5'];
             const cardClasses = "bg-white p-6 md:p-8 rounded-2xl border border-neutral-200/60 shadow-[0_4px_24px_rgba(0,0,0,0.02)] flex flex-col justify-between transition-shadow hover:shadow-[0_4px_24px_rgba(0,0,0,0.06)] min-w-0";
@@ -663,19 +704,30 @@
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8 relative z-10">
                   <div className={cardClasses}>
                     <div>
-                      <h3 className="text-sm font-semibold text-neutral-900 mb-6 flex items-center gap-2 tracking-tight uppercase">
-                        Kinerja Transaksi Penjualan
-                      </h3>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                        <h3 className="text-sm font-semibold text-neutral-900 flex items-center gap-2 tracking-tight uppercase">
+                          Kinerja Transaksi Penjualan
+                        </h3>
+                        <select 
+                          className="appearance-none bg-white border border-neutral-200/80 text-neutral-900 text-[11px] font-bold rounded-lg px-3 py-1.5 outline-none focus:ring-4 focus:ring-neutral-900/5 cursor-pointer shadow-sm transition-all"
+                          value={salesStatusFilter}
+                          onChange={(e) => setSalesStatusFilter(e.target.value)}
+                        >
+                          <option value="All">Semua Transaksi</option>
+                          <option value="Open">Status: OPEN</option>
+                          <option value="Close">Status: CLOSED</option>
+                        </select>
+                      </div>
                       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
                         <div className="min-w-0">
                           <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Total Omset</p>
-                          <p className="text-xl font-bold tracking-tighter text-neutral-900 whitespace-nowrap">{formatRupiah(totalRevenue)}</p>
+                          <p className="text-xl font-bold tracking-tighter text-neutral-900 whitespace-nowrap">{formatRupiah(cardPerformanceData.tRev)}</p>
                         </div>
                         <div className="min-w-0">
                           <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Biaya Opex</p>
                           <div className="relative z-50">
                              <button onClick={() => setIsHppDropdownOpen(!isHppDropdownOpen)} className="flex items-center gap-1.5 focus:outline-none group max-w-full">
-                                <p className="text-xl font-bold tracking-tighter text-neutral-900 group-hover:text-neutral-600 transition-colors whitespace-nowrap">{formatRupiah(totalHPP)}</p>
+                                <p className="text-xl font-bold tracking-tighter text-neutral-900 group-hover:text-neutral-600 transition-colors whitespace-nowrap">{formatRupiah(cardPerformanceData.tHpp)}</p>
                                 <div className="p-1 rounded bg-neutral-100 group-hover:bg-neutral-200 transition-colors flex-shrink-0">
                                    <ChevronDown size={14} className={`text-neutral-500 transition-transform ${isHppDropdownOpen ? 'rotate-180' : ''}`} />
                                 </div>
@@ -686,10 +738,10 @@
                                   <div className="absolute top-full left-0 mt-3 w-[260px] sm:w-72 bg-white border border-neutral-200/80 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.08)] z-40 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                                      <div className="px-4 py-3 bg-neutral-50/80 border-b border-neutral-100 flex justify-between items-center">
                                         <span className="text-[11px] font-bold text-neutral-900 uppercase tracking-wider">Breakdown Opex</span>
-                                        <span className="text-[10px] font-bold text-neutral-600 bg-neutral-200/60 px-2 py-1 rounded-md">{formatRupiah(totalHPP)}</span>
+                                        <span className="text-[10px] font-bold text-neutral-600 bg-neutral-200/60 px-2 py-1 rounded-md">{formatRupiah(cardPerformanceData.tHpp)}</span>
                                      </div>
                                      <div className="p-2 flex flex-col gap-1 max-h-[300px] overflow-y-auto">
-                                        {Object.entries(hppBreakdown).map(([key, val]) => (
+                                        {Object.entries(cardPerformanceData.tHppBreakdown).map(([key, val]) => (
                                            <div key={key} className="flex justify-between items-center px-3 py-2 hover:bg-neutral-50 rounded-xl transition-colors group/item">
                                               <span className="text-[12px] font-semibold text-neutral-600 group-hover/item:text-neutral-900 truncate mr-2">{key}</span>
                                               <span className={`text-[12px] font-bold whitespace-nowrap ${val > 0 ? 'text-neutral-900' : 'text-neutral-400'}`}>{formatRupiah(val)}</span>
@@ -703,30 +755,35 @@
                         </div>
                         <div className="min-w-0">
                           <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Laba Kotor</p>
-                          <p className="text-xl font-bold tracking-tighter text-neutral-900 whitespace-nowrap">{formatRupiah(labaKotor)}</p>
+                          <p className="text-xl font-bold tracking-tighter text-neutral-900 whitespace-nowrap">{formatRupiah(cardPerformanceData.tLabaKotor)}</p>
                         </div>
                         <div className="min-w-0">
                           <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Laba Bersih Akhir</p>
-                          <p className="text-xl font-bold tracking-tighter text-neutral-900 whitespace-nowrap">{formatRupiah(labaBersihAkhir)}</p>
+                          <p className="text-xl font-bold tracking-tighter text-neutral-900 whitespace-nowrap">{formatRupiah(cardPerformanceData.tLabaBersih)}</p>
                         </div>
                       </div>
 
-                      <div className="mt-8 pt-6 border-t border-neutral-100/60 grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-                        <div className="min-w-0">
-                          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Laba Kotor</p>
-                          <p className="text-[13px] font-bold text-neutral-700 whitespace-nowrap">{formatRupiah(labaKotor)}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Pengembalian (10%)</p>
-                          <p className="text-[13px] font-bold text-neutral-700 whitespace-nowrap">{formatRupiah(pengembalianModal)}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Pengelola (70%)</p>
-                          <p className="text-[13px] font-bold text-neutral-900 whitespace-nowrap">{formatRupiah(porsiPengelola)}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Investor (30%)</p>
-                          <p className="text-[13px] font-bold text-neutral-900 whitespace-nowrap">{formatRupiah(porsiInvestor)}</p>
+                      <div className="mt-8 pt-6 border-t border-neutral-100/60">
+                        <h4 className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest mb-4">
+                          Simulasi Pembagian {salesStatusFilter === 'All' ? '(Semua Transaksi)' : `(Status: ${salesStatusFilter.toUpperCase()})`}
+                        </h4>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Laba Kotor</p>
+                            <p className="text-[13px] font-bold text-neutral-700 whitespace-nowrap">{formatRupiah(cardPerformanceData.tLabaKotor)}</p>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Pengembalian (10%)</p>
+                            <p className="text-[13px] font-bold text-neutral-700 whitespace-nowrap">{formatRupiah(cardPerformanceData.tPengembalian)}</p>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Pengelola (70%)</p>
+                            <p className="text-[13px] font-bold text-neutral-900 whitespace-nowrap">{formatRupiah(cardPerformanceData.tPengelola)}</p>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5 truncate">Investor (30%)</p>
+                            <p className="text-[13px] font-bold text-neutral-900 whitespace-nowrap">{formatRupiah(cardPerformanceData.tInvestor)}</p>
+                          </div>
                         </div>
                       </div>
                     </div>
