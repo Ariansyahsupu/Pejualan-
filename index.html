@@ -128,6 +128,15 @@
           const [capitalReturns, setCapitalReturns] = useState([]);
           const [capitalAdditions, setCapitalAdditions] = useState([]);
           const [stocks, setStocks] = useState([]);
+          const [sisaModalSheet, setSisaModalSheet] = useState(0);
+          const [syncTrigger, setSyncTrigger] = useState(0);
+          const [isSyncing, setIsSyncing] = useState(false);
+
+          const handleSync = () => {
+            setIsSyncing(true);
+            setSyncTrigger(prev => prev + 1);
+            setTimeout(() => setIsSyncing(false), 1000);
+          };
 
           useEffect(() => {
             const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSMYPiHfpDtnOIMdbzSvbhUn1Fd1XFDX8s-smQLvGqgVoasE8t-r4DQPmzysVIj6PbRvkQY_tPbIRI_/pub?gid=0&single=true&output=csv";
@@ -222,68 +231,46 @@
 
                 const parseIDR = (str) => {
                    if (!str) return 0;
-                   let strStr = str.toString();
-                   let isNegative = strStr.includes('-') || (strStr.includes('(') && strStr.includes(')'));
-                   let clean = strStr.replace(/[^0-9]/g, '');
-                   let val = parseFloat(clean) || 0;
-                   return isNegative ? -val : val;
+                   let clean = str.toString().replace(/Rp/gi, '').replace(/\./g, '').replace(/\s/g, '').replace(/,/g, '.');
+                   let val = parseFloat(clean);
+                   return isNaN(val) ? 0 : val;
                 };
 
                 const rows = csvText.split('\n');
                 const fetchedSales = [];
                 for (let i = 1; i < rows.length; i++) {
-                  if (!rows[i].trim()) continue;
+                  if (!rows[i].trim() || rows[i].toLowerCase().includes('<!doctype html>')) continue;
                   const row = parseCSVRow(rows[i]);
-                  if (!row[0]) continue;
-                  
-                  let date = row[0] || '';
-                  let buyerName = row[1] || '-';
-                  let province = row[2] || '';
-                  let area = row[3] || '';
-                  let productName = row[4] || '';
-                  let qty = parseInt(row[5]) || 0;
-                  let bonusQty = parseInt(row[6]) || 0;
-                  
-                  // Pemetaan absolut format 25 Kolom Terbaru:
-                  let rawRevenue = row[7];
-                  let revenue = (rawRevenue || '').toLowerCase().includes('open') || (rawRevenue || '').toLowerCase().includes('close') ? 0 : parseIDR(rawRevenue);
-                  
-                  let hppPokok = parseIDR(row[8]);
-                  let biayaPlastik = parseIDR(row[9]);
-                  let locis = parseIDR(row[10]);
-                  let karet = parseIDR(row[11]);
-                  let serbuk = parseIDR(row[12]);
-                  let sertifikat = parseIDR(row[13]);
-                  let kotakPacking = parseIDR(row[14]);
-                  let laborPacking = parseIDR(row[15]);
+                  if (!row[0] && !row[1]) continue;
 
-                  // 6 COA Utama + Marketing
-                  let coaBahan = parseIDR(row[16]);
-                  let coaTenaga = parseIDR(row[17]); // Jasa Sablon
-                  let coaPeralatan = parseIDR(row[18]); // Peralatan & Perlengkapan
-                  let coaKirim = parseIDR(row[19]); // Biaya Kirim
-                  let coaTenagaPacking = parseIDR(row[20]); // Tenaga Kerja Packing
-                  let coaProductMarketing = parseIDR(row[21]); // Product Marketing
-                  let coaMarketing = parseIDR(row[22]); // Marketing (10%)
-                  
-                  let rawProfit = row[23];
-                  let profit = (rawProfit || '').toLowerCase().includes('open') || (rawProfit || '').toLowerCase().includes('close') ? 0 : parseIDR(rawProfit);
-                  let paymentStatus = row[24] || 'Open';
-
-                  let totalCost = coaBahan + coaTenaga + coaPeralatan + coaKirim + coaTenagaPacking + coaProductMarketing + coaMarketing;
-
+                  /* Logika Baru: Menarik data berdasarkan 25 urutan kolom yang benar */
                   fetchedSales.push({
-                    id: i, date, buyerName, province, area, productName, qty, bonusQty, hppPokok,
-                    coaBahan, coaTenaga, coaPeralatan, coaMarketing, coaKirim, coaTenagaPacking, coaProductMarketing,
-                    totalCost, revenue, profit, paymentStatus,
-                    biayaPlastik, locis, karet, serbuk, sertifikat, laborPacking, kotakPacking
+                    id: i,
+                    date: row[0] || '',
+                    buyerName: row[1] || '-',
+                    province: row[2] || '-',
+                    area: row[3] || '-',
+                    productName: row[4] || '-',
+                    qty: parseInt(row[5]) || 0,
+                    bonusQty: parseInt(row[6]) || 0,
+                    revenue: parseIDR(row[7]),       // Kolom 8: Nilai Transaksi
+                    hppPokok: parseIDR(row[8]),      // Kolom 9: HPP Pokok
+                    coaBahan: parseIDR(row[16]),     // Kolom 17: Bahan Baku (COA)
+                    coaTenaga: parseIDR(row[17]),    // Kolom 18: Jasa Sablon (COA)
+                    coaPeralatan: parseIDR(row[18]), // Kolom 19: Peralatan (COA)
+                    coaKirim: parseIDR(row[19]),     // Kolom 20: Biaya Kirim (COA)
+                    coaTenagaPacking: parseIDR(row[20]),    // Kolom 21: Tenaga Kerja Packing (COA)
+                    coaProductMarketing: parseIDR(row[21]), // Kolom 22: Product Marketing (COA)
+                    coaMarketing: parseIDR(row[22]), // Kolom 23: Marketing (COA)
+                    profit: parseIDR(row[23]),       // Kolom 24: Laba Bersih
+                    paymentStatus: row[24] || 'Open' // Kolom 25: Pembayaran
                   });
                 }
                 setSales(fetchedSales.reverse());
               })
               .catch(err => console.error("Gagal mengambil data Penjualan:", err));
 
-            const expCsvUrl = "https://docs.google.com/spreadsheets/d/19muvmAtdRxYJckDuXADBz3PbDaSQKtbLy3fwEwUwGcU/export?format=csv&gid=376046659";
+            const expCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSMYPiHfpDtnOIMdbzSvbhUn1Fd1XFDX8s-smQLvGqgVoasE8t-r4DQPmzysVIj6PbRvkQY_tPbIRI_/pub?gid=376046659&single=true&output=csv";
             fetch(expCsvUrl)
               .then(res => res.text())
               .then(csvText => {
@@ -307,21 +294,69 @@
 
                 const parseIDR = (str) => {
                    if (!str) return 0;
-                   let clean = str.toString().replace(/[^0-9]/g, '');
-                   return parseFloat(clean) || 0;
+                   // Bersihkan semua karakter kecuali angka, untuk membaca format "Rp 15.000"
+                   let clean = str.toString().replace(/Rp/gi, '').replace(/\./g, '').replace(/\s/g, '');
+                   // Abaikan angka di belakang koma (jika ada nilai desimal ,00)
+                   if(clean.includes(',')) clean = clean.split(',')[0];
+                   let val = parseFloat(clean);
+                   return isNaN(val) ? 0 : val;
                 };
 
                 const rows = csvText.split('\n');
                 const fetchedExpenses = [];
-                for (let i = 1; i < rows.length; i++) {
-                  if (!rows[i].trim()) continue;
-                  const row = parseCSVRow(rows[i]);
-                  if (!row[0]) continue;
+                let lastValidModalAkhir = 0;
 
-                  fetchedExpenses.push({
-                    id: i, date: row[0] || '', name: row[1] || '-', category: row[2] || '-', amount: parseIDR(row[3])
-                  });
+                if (rows.length > 0) {
+                  // Otomatis mencari urutan kolom berdasarkan nama Header
+                  const headers = parseCSVRow(rows[0]);
+                  let amountIdx = 4; // Default index
+                  let modalIdx = 6;  // Default index
+
+                  for (let c = 0; c < headers.length; c++) {
+                    const headerStr = headers[c].toLowerCase();
+                    if (headerStr.includes('nominal pengeluaran')) amountIdx = c;
+                    if (headerStr.includes('modal akhir')) modalIdx = c;
+                  }
+
+                  // 1. Ambil daftar riwayat (Loop dari atas ke bawah)
+                  for (let i = 1; i < rows.length; i++) {
+                    if (!rows[i].trim() || rows[i].toLowerCase().includes('<!doctype html>')) continue;
+                    const row = parseCSVRow(rows[i]);
+                    if (!row[0] && !row[1]) continue; 
+
+                    let amountVal = parseIDR(row[amountIdx]);
+                    
+                    fetchedExpenses.push({
+                      id: i, 
+                      date: row[0] || '', 
+                      name: row[1] || '-', 
+                      category: row[2] || '-', 
+                      amount: amountVal 
+                    });
+                  }
+                  
+                  // 2. Ambil nilai Modal Akhir dari baris TERAKHIR YANG VALID (Loop dari bawah ke atas)
+                  for (let i = rows.length - 1; i >= 1; i--) {
+                    if (!rows[i].trim() || rows[i].toLowerCase().includes('<!doctype html>')) continue;
+                    const row = parseCSVRow(rows[i]);
+                    
+                    // KUNCI PERBAIKAN: Abaikan baris kosong (hasil rumus ditarik ke bawah)
+                    // Baris harus memiliki setidaknya Tanggal atau Nama Transaksi
+                    if (!row[0] && !row[1]) continue;
+                    
+                    // Pastikan sel pada kolom Modal Akhir tidak kosong
+                    if (row[modalIdx] !== undefined && row[modalIdx].trim() !== '') {
+                       const cellVal = row[modalIdx];
+                       // Pastikan sel tersebut benar-benar berisi angka
+                       if (/[0-9]/.test(cellVal)) { 
+                          lastValidModalAkhir = parseIDR(cellVal);
+                          break; // Hentikan pencarian karena baris transaksi terakhir sudah ditemukan
+                       }
+                    }
+                  }
                 }
+                
+                setSisaModalSheet(lastValidModalAkhir);
                 setExpenses(fetchedExpenses.reverse());
               })
               .catch(err => console.error("Gagal mengambil data Pengeluaran:", err));
@@ -469,7 +504,7 @@
               })
               .catch(err => console.error("Gagal mengambil data SOH:", err));
 
-          }, []);
+          }, [syncTrigger]);
 
           const LandingPageView = () => (
             <div className="min-h-screen bg-[#fafafa] flex items-center justify-center p-4 selection:bg-neutral-900 selection:text-white">
@@ -595,13 +630,28 @@
                       }`}
                     >
                       <Archive size={18} className={activeTab === 'stock' ? 'text-white' : 'text-neutral-400'} />
-                      <span>SOH / Stock</span>
-                    </button>
-                  </>
-                )}
-              </nav>
+                  <span>SOH / Stock</span>
+                </button>
+              </>
+            )}
+            
+            {/* Tombol Manual Sync Data */}
+            <div className="mt-4 md:mt-auto pt-4 md:border-t border-neutral-200/80 w-full shrink-0">
+              <button
+                onClick={handleSync}
+                disabled={isSyncing}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-neutral-900 hover:bg-black text-white text-[12px] font-bold rounded-xl transition-all disabled:opacity-50 shadow-sm active:scale-95"
+              >
+                <svg className={isSyncing ? "animate-spin" : ""} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path>
+                  <path d="M21 3v5h-5"></path>
+                </svg>
+                {isSyncing ? "Menyinkronkan..." : "Sync Data Manual"}
+              </button>
             </div>
-          );
+          </nav>
+        </div>
+      );
 
           const DashboardView = () => {
             const [selectedMonths, setSelectedMonths] = useState([]);
@@ -686,7 +736,7 @@
 
               const totalPenambahanModalAll = capitalAdditions.reduce((sum, c) => sum + c.amount, 0);
               const modalAwal = 15000000;
-              const sisaModal = modalAwal + totalPenambahanModalAll - totalOpex;
+              const sisaModal = sisaModalSheet;
 
               const sortedProvinces = Object.entries(provBreakdown)
                 .map(([name, data]) => {
@@ -713,13 +763,13 @@
               const trendData = Object.values(monthlyTrendMap).sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 
               return { totalRevenue, totalHPP, totalOpex, totalDikembalikan, totalProfit: totalRevenue - totalHPP, sortedProvinces, sortedProducts, trendData, modalAwal, sisaModal, sortedOpex };
-            }, [sales, selectedMonths, expenses, capitalReturns, capitalAdditions]);
+            }, [sales, selectedMonths, expenses, capitalReturns, capitalAdditions, sisaModalSheet]);
 
             const { totalOpex, totalDikembalikan, sisaModal, sortedProvinces, sortedProducts, trendData, sortedOpex } = dashboardData;
             
             const cardPerformanceData = useMemo(() => {
               let tRev = 0, tHpp = 0, tHppBreakdown = {
-                "Bahan Baku (COA)": 0, "Jasa Sablon (COA)": 0, "Peralatan dan Perlengkapan (COA)": 0, "Biaya Kirim Jasa EXPDC (COA)": 0, "Tenaga Kerja Packing (COA)": 0, "Product Marketing (COA)": 0
+                "Bahan Baku (COA)": 0, "Jasa Sablon (COA)": 0, "Peralatan dan Perlengkapan (COA)": 0, "Biaya Kirim Jasa EXPDC (COA)": 0, "Tenaga Kerja Packing (COA)": 0, "Product Marketing (COA)": 0, "Marketing (COA)": 0
               };
               
               let filteredSales = sales;
@@ -735,7 +785,7 @@
                 
                 if (matchStatus) {
                   tRev += sale.revenue;
-                  const hppTransaksi = (sale.coaBahan || 0) + (sale.coaTenaga || 0) + (sale.coaPeralatan || 0) + (sale.coaKirim || 0) + (sale.coaTenagaPacking || 0) + (sale.coaProductMarketing || 0);
+                  const hppTransaksi = (sale.coaBahan || 0) + (sale.coaTenaga || 0) + (sale.coaPeralatan || 0) + (sale.coaKirim || 0) + (sale.coaTenagaPacking || 0) + (sale.coaProductMarketing || 0) + (sale.coaMarketing || 0);
                   tHpp += hppTransaksi;
                   
                   tHppBreakdown["Bahan Baku (COA)"] += sale.coaBahan || 0;
@@ -744,6 +794,7 @@
                   tHppBreakdown["Biaya Kirim Jasa EXPDC (COA)"] += sale.coaKirim || 0;
                   tHppBreakdown["Tenaga Kerja Packing (COA)"] += sale.coaTenagaPacking || 0;
                   tHppBreakdown["Product Marketing (COA)"] += sale.coaProductMarketing || 0;
+                  tHppBreakdown["Marketing (COA)"] += sale.coaMarketing || 0;
                 }
               });
 
@@ -1671,7 +1722,7 @@
                   method: "POST", 
                   mode: "no-cors",
                   headers: { "Content-Type": "text/plain;charset=utf-8" },
-                  body: JSON.stringify({ sheetName: "Pengeluaran", gid: "376046659", rowData: [newExpense.date, newExpense.name, newExpense.category, expenseAmount] })
+                  body: JSON.stringify({ sheetName: "Pengeluaran", gid: "376046659", rowData: [newExpense.date, newExpense.name, "Pengeluaran", newExpense.category, expenseAmount] })
                 }).catch(err => console.error("Fetch Network Error:", err));
               } catch (error) {
                 console.error("Fetch Execution Error:", error);
@@ -1691,7 +1742,7 @@
                   method: "POST", 
                   mode: "no-cors",
                   headers: { "Content-Type": "text/plain;charset=utf-8" },
-                  body: JSON.stringify({ sheetName: "Penambahan Modal", gid: "113712926", rowData: [newCapAdd.date, newCapAdd.name, amountNum] })
+                  body: JSON.stringify({ sheetName: "Pengeluaran", gid: "376046659", rowData: [newCapAdd.date, newCapAdd.name, "Penambahan Modal", "-", amountNum] })
                 }).catch(err => console.error("Fetch Network Error:", err));
               } catch (error) {
                 console.error("Fetch Execution Error:", error);
