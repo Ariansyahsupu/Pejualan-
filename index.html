@@ -67,7 +67,8 @@
         import { 
           LayoutDashboard, Package, ShoppingCart, TrendingUp,
           Save, Trash2, PieChart as PieChartIcon, BarChart3, ChevronDown, 
-          ArrowLeft, CreditCard, Wallet, Archive, PlusCircle
+          ArrowLeft, CreditCard, Wallet, Archive, PlusCircle,
+          Briefcase, CheckCircle
         } from 'lucide-react';
         import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
@@ -128,6 +129,7 @@
           const [capitalReturns, setCapitalReturns] = useState([]);
           const [capitalAdditions, setCapitalAdditions] = useState([]);
           const [stocks, setStocks] = useState([]);
+          const [settlements, setSettlements] = useState([]);
           const [sisaModalSheet, setSisaModalSheet] = useState(0);
           const [syncTrigger, setSyncTrigger] = useState(0);
           const [isSyncing, setIsSyncing] = useState(false);
@@ -504,6 +506,49 @@
               })
               .catch(err => console.error("Gagal mengambil data SOH:", err));
 
+            const settlementCsvUrl = "https://docs.google.com/spreadsheets/d/19muvmAtdRxYJckDuXADBz3PbDaSQKtbLy3fwEwUwGcU/export?format=csv&gid=60401470";
+            fetch(settlementCsvUrl)
+              .then(res => res.text())
+              .then(csvText => {
+                const parseCSVRow = (str) => {
+                  let result = [], current = '', inQuotes = false;
+                  for (let i = 0; i < str.length; i++) {
+                    let char = str[i];
+                    if (inQuotes) {
+                      if (char === '"') {
+                         if (str[i+1] === '"') { current += '"'; i++; } else { inQuotes = false; }
+                      } else { current += char; }
+                    } else {
+                      if (char === '"') { inQuotes = true; }
+                      else if (char === ',') { result.push(current); current = ''; }
+                      else { current += char; }
+                    }
+                  }
+                  result.push(current);
+                  return result.map(s => s.trim());
+                };
+
+                const parseIDR = (str) => {
+                   if (!str) return 0;
+                   let clean = str.toString().replace(/[^0-9]/g, '');
+                   return parseFloat(clean) || 0;
+                };
+
+                const rows = csvText.split('\n');
+                const fetchedSettlements = [];
+                for (let i = 1; i < rows.length; i++) {
+                  if (!rows[i].trim()) continue;
+                  const row = parseCSVRow(rows[i]);
+                  if (!row[0]) continue;
+
+                  fetchedSettlements.push({
+                    id: i, date: row[0] || '', name: row[1] || '-', category: row[3] || '-', amount: parseIDR(row[4])
+                  });
+                }
+                setSettlements(fetchedSettlements.reverse());
+              })
+              .catch(err => console.error("Gagal mengambil data Distribusi:", err));
+
           }, [syncTrigger]);
 
           const LandingPageView = () => (
@@ -632,6 +677,15 @@
                       <Archive size={18} className={activeTab === 'stock' ? 'text-white' : 'text-neutral-400'} />
                   <span>SOH / Stock</span>
                 </button>
+                <button
+                  onClick={() => setActiveTab('settlement')}
+                  className={`whitespace-nowrap flex-1 md:w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-[13px] font-semibold transition-all duration-200 ${
+                    activeTab === 'settlement' ? 'bg-neutral-900 text-white shadow-sm' : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900'
+                  }`}
+                >
+                  <Briefcase size={18} className={activeTab === 'settlement' ? 'text-white' : 'text-neutral-400'} />
+                  <span>Distribusi Laba</span>
+                </button>
               </>
             )}
             
@@ -722,10 +776,12 @@
               });
 
               filteredExpenses.forEach(exp => {
-                totalOpex += exp.amount;
-                const cat = exp.category || 'Lainnya';
-                if (!opexBreakdown[cat]) { opexBreakdown[cat] = 0; }
-                opexBreakdown[cat] += exp.amount;
+                if (exp.category !== 'Bagi Hasil' && exp.category !== 'Payroll' && exp.category !== 'Profit Sharing') {
+                  totalOpex += exp.amount;
+                  const cat = exp.category || 'Lainnya';
+                  if (!opexBreakdown[cat]) { opexBreakdown[cat] = 0; }
+                  opexBreakdown[cat] += exp.amount;
+                }
               });
 
               capitalReturns.forEach(c => {
@@ -1759,7 +1815,11 @@
 
             const formatMonth = (ym) => { const [y, m] = ym.split('-'); const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']; return `${months[parseInt(m, 10)-1]} ${y}`; };
             
-            const filteredExpenses = useMemo(() => { if (!selectedMonth) return expenses; return expenses.filter(e => e.date.substring(0, 7) === selectedMonth); }, [expenses, selectedMonth]);
+            const filteredExpenses = useMemo(() => { 
+              let base = expenses.filter(e => e.category !== 'Bagi Hasil' && e.category !== 'Payroll' && e.category !== 'Profit Sharing');
+              if (!selectedMonth) return base; 
+              return base.filter(e => e.date.substring(0, 7) === selectedMonth); 
+            }, [expenses, selectedMonth]);
             const totalPengeluaran = useMemo(() => { return filteredExpenses.reduce((sum, e) => sum + e.amount, 0); }, [filteredExpenses]);
 
             const filteredCapAdd = useMemo(() => { if (!selectedMonth) return capitalAdditions; return capitalAdditions.filter(c => c.date.substring(0, 7) === selectedMonth); }, [capitalAdditions, selectedMonth]);
@@ -2185,6 +2245,213 @@
             );
           };
 
+          const SettlementView = () => {
+            const [selectedMonth, setSelectedMonth] = useState('');
+            const [newSettlement, setNewSettlement] = useState({ name: '', role: '', amount: '', date: new Date().toISOString().split('T')[0] });
+
+            const availableMonths = useMemo(() => {
+              const m = new Set([
+                ...sales.map(s => s.date.substring(0, 7)),
+                ...settlements.map(s => s.date.substring(0, 7)),
+                ...capitalReturns.map(c => c.date.substring(0, 7))
+              ].filter(d => d.length === 7));
+              return Array.from(m).sort().reverse();
+            }, [sales, settlements, capitalReturns]);
+
+            const formatMonth = (ym) => { const [y, m] = ym.split('-'); const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']; return `${months[parseInt(m, 10)-1]} ${y}`; };
+
+            const totals = useMemo(() => {
+              let tRev = 0, tHpp = 0, tPenyusutan = 0;
+              
+              let filteredSales = selectedMonth ? sales.filter(s => s.date.substring(0, 7) === selectedMonth) : sales;
+              let filteredStocks = selectedMonth ? stocks.filter(s => s.date.substring(0, 7) === selectedMonth) : stocks;
+              
+              filteredSales.forEach(sale => {
+                  tRev += sale.revenue;
+                  tHpp += (sale.coaBahan || 0) + (sale.coaTenaga || 0) + (sale.coaPeralatan || 0) + (sale.coaKirim || 0) + (sale.coaTenagaPacking || 0) + (sale.coaProductMarketing || 0) + (sale.coaMarketing || 0);
+              });
+              filteredStocks.forEach(stk => { tPenyusutan += stk.valueShrinkage || 0; });
+
+              const tLabaKotor = tRev - tHpp;
+              const tPengembalian = tLabaKotor > 0 ? tLabaKotor * 0.10 : 0;
+              const tLabaBersih = tLabaKotor - tPengembalian - tPenyusutan;
+              const tPengelola = tLabaBersih > 0 ? tLabaBersih * 0.70 : 0;
+              const tInvestor = tLabaBersih > 0 ? tLabaBersih * 0.30 : 0;
+
+              return { tPengembalian, tPengelola, tInvestor, tTotalCoa: tHpp };
+            }, [sales, stocks, selectedMonth]);
+
+            const paid = useMemo(() => {
+              let pPengembalian = 0, pPengelola = 0, pInvestor = 0, pCoa = 0;
+              
+              let filteredCap = selectedMonth ? capitalReturns.filter(c => c.date.substring(0, 7) === selectedMonth) : capitalReturns;
+              let filteredSet = selectedMonth ? settlements.filter(s => s.date.substring(0, 7) === selectedMonth) : settlements;
+              
+              filteredCap.forEach(c => pPengembalian += c.amount);
+              filteredSet.forEach(e => {
+                if (e.category === 'Bagi Hasil' || e.category === 'Payroll' || e.category === 'Profit Sharing') {
+                  if (e.name.toLowerCase().includes('pengelola')) pPengelola += e.amount;
+                  if (e.name.toLowerCase().includes('investor')) pInvestor += e.amount;
+                }
+                if (e.category === 'Pengembalian COA') {
+                  pCoa += e.amount;
+                }
+              });
+              return { pPengembalian, pPengelola, pInvestor, pCoa };
+            }, [capitalReturns, settlements, selectedMonth]);
+
+            const handleAddSettlement = (e) => {
+              e.preventDefault();
+              if (!newSettlement.name || !newSettlement.amount || !newSettlement.role) return;
+              const expenseAmount = parseFloat(newSettlement.amount);
+              const expenseName = `${newSettlement.name} (${newSettlement.role})`;
+              const category = newSettlement.role === 'Pengembalian COA' ? 'Pengembalian COA' : 'Bagi Hasil';
+              
+              setSettlements([{ id: Date.now(), name: expenseName, category: category, amount: expenseAmount, date: newSettlement.date }, ...settlements]);
+
+              try {
+                fetch(SCRIPT_URL, {
+                  method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain;charset=utf-8" },
+                  body: JSON.stringify({ sheetName: "Distribusi & Payroll", gid: "60401470", rowData: [newSettlement.date, expenseName, "Pengeluaran", category, expenseAmount] })
+                }).catch(err => console.error(err));
+              } catch (error) { console.error(error); }
+              
+              setNewSettlement({ name: '', role: '', amount: '', date: new Date().toISOString().split('T')[0] });
+            };
+
+            const inputClass = "w-full px-4 py-2.5 bg-neutral-50/50 border border-neutral-200 text-neutral-900 text-[13px] rounded-xl focus:outline-none focus:ring-4 focus:ring-neutral-900/5 focus:border-neutral-900 transition-all placeholder:text-neutral-400 font-semibold";
+            const selectClass = "w-full px-4 py-2.5 bg-neutral-50/50 border border-neutral-200 text-neutral-900 text-[13px] rounded-xl focus:outline-none focus:ring-4 focus:ring-neutral-900/5 focus:border-neutral-900 transition-all font-semibold cursor-pointer appearance-none";
+            
+            const tableData = useMemo(() => {
+              return settlements.filter(e => 
+                ['Bagi Hasil', 'Profit Sharing', 'Payroll', 'Pengembalian COA'].includes(e.category) && 
+                (!selectedMonth || e.date.substring(0, 7) === selectedMonth)
+              );
+            }, [settlements, selectedMonth]);
+
+            return (
+              <div className="p-4 sm:p-6 md:p-10 space-y-8 animate-in fade-in max-w-7xl mx-auto">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                   <div>
+                     <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight text-neutral-900">Distribusi & Pencairan Laba</h2>
+                     <p className="text-neutral-500 text-[13px] mt-1.5 font-medium">Laporan status utang bagi hasil, dana COA, dan formulir pembayaran.</p>
+                   </div>
+                   <select className="w-full sm:w-auto appearance-none bg-white border border-neutral-200/80 text-neutral-900 text-[13px] font-bold rounded-xl px-4 py-2.5 outline-none focus:ring-4 focus:ring-neutral-900/5 cursor-pointer shadow-[0_2px_10px_rgba(0,0,0,0.03)] transition-all" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
+                     <option value="">Semua Bulan</option>
+                     {availableMonths.map(ym => (<option key={ym} value={ym}>{formatMonth(ym)}</option>))}
+                   </select>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  <div className="bg-white p-6 rounded-2xl border border-neutral-200/60 shadow-[0_4px_24px_rgba(0,0,0,0.02)] flex flex-col gap-3">
+                    <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest">Hak Pengelola (70%)</p>
+                    <div className="flex justify-between items-center text-sm font-semibold"><span className="text-neutral-500">Total Hak:</span> <span>{formatRupiah(totals.tPengelola)}</span></div>
+                    <div className="flex justify-between items-center text-sm font-semibold text-emerald-600"><span className="text-emerald-600/70">Telah Dibayar:</span> <span>{formatRupiah(paid.pPengelola)}</span></div>
+                    <div className="pt-3 mt-1 border-t border-neutral-100 flex justify-between items-center text-base font-bold text-neutral-900"><span className="text-neutral-600">Sisa Utang:</span> <span>{formatRupiah(totals.tPengelola - paid.pPengelola)}</span></div>
+                  </div>
+                  <div className="bg-white p-6 rounded-2xl border border-neutral-200/60 shadow-[0_4px_24px_rgba(0,0,0,0.02)] flex flex-col gap-3">
+                    <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest">Hak Investor (30%)</p>
+                    <div className="flex justify-between items-center text-sm font-semibold"><span className="text-neutral-500">Total Hak:</span> <span>{formatRupiah(totals.tInvestor)}</span></div>
+                    <div className="flex justify-between items-center text-sm font-semibold text-emerald-600"><span className="text-emerald-600/70">Telah Dibayar:</span> <span>{formatRupiah(paid.pInvestor)}</span></div>
+                    <div className="pt-3 mt-1 border-t border-neutral-100 flex justify-between items-center text-base font-bold text-neutral-900"><span className="text-neutral-600">Sisa Utang:</span> <span>{formatRupiah(totals.tInvestor - paid.pInvestor)}</span></div>
+                  </div>
+                  <div className="bg-white p-6 rounded-2xl border border-neutral-200/60 shadow-[0_4px_24px_rgba(0,0,0,0.02)] flex flex-col gap-3">
+                    <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest">Pengembalian Modal (10%)</p>
+                    <div className="flex justify-between items-center text-sm font-semibold"><span className="text-neutral-500">Total Hak:</span> <span>{formatRupiah(totals.tPengembalian)}</span></div>
+                    <div className="flex justify-between items-center text-sm font-semibold text-emerald-600"><span className="text-emerald-600/70">Telah Dikembalikan:</span> <span>{formatRupiah(paid.pPengembalian)}</span></div>
+                    <div className="pt-3 mt-1 border-t border-neutral-100 flex justify-between items-center text-base font-bold text-neutral-900"><span className="text-neutral-600">Sisa Utang:</span> <span>{formatRupiah(totals.tPengembalian - paid.pPengembalian)}</span></div>
+                  </div>
+                  <div className="bg-white p-6 rounded-2xl border border-neutral-200/60 shadow-[0_4px_24px_rgba(0,0,0,0.02)] flex flex-col gap-3 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-blue-50 rounded-bl-[100px] -z-10"></div>
+                    <p className="text-[11px] font-bold text-blue-600 uppercase tracking-widest">Dana COA Terkumpul</p>
+                    <div className="flex justify-between items-center text-sm font-semibold"><span className="text-neutral-500">Total Biaya:</span> <span>{formatRupiah(totals.tTotalCoa)}</span></div>
+                    <div className="flex justify-between items-center text-sm font-semibold text-emerald-600"><span className="text-emerald-600/70">Telah Dicairkan:</span> <span>{formatRupiah(paid.pCoa)}</span></div>
+                    <div className="pt-3 mt-1 border-t border-neutral-100 flex justify-between items-center text-base font-bold text-neutral-900"><span className="text-neutral-600">Saldo COA:</span> <span>{formatRupiah(totals.tTotalCoa - paid.pCoa)}</span></div>
+                  </div>
+                </div>
+
+                <div className="bg-white p-6 md:p-8 rounded-2xl border border-neutral-200/60 shadow-[0_4px_24px_rgba(0,0,0,0.02)]">
+                  <div className="mb-6"><h3 className="text-lg font-semibold text-neutral-900 tracking-tight">Formulir Pencairan / Pembayaran</h3></div>
+                  <form onSubmit={handleAddSettlement} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-end">
+                    <div>
+                      <label className="block text-[12px] font-bold text-neutral-700 mb-2">Peran / Kategori</label>
+                      <select required className={selectClass} value={newSettlement.role} onChange={e => {
+                          const role = e.target.value;
+                          let name = '';
+                          if (role === 'Pengelola') name = 'Sukmariyanto';
+                          else if (role === 'Investor') name = 'Ariansyah Supu';
+                          setNewSettlement({...newSettlement, role, name});
+                      }}>
+                        <option value="" disabled>-- Pilih Kategori --</option>
+                        <option value="Pengelola">Hak Pengelola</option>
+                        <option value="Investor">Hak Investor</option>
+                        <option value="Pengembalian COA">Pencairan Dana COA</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[12px] font-bold text-neutral-700 mb-2">Nama Penerima / Vendor</label>
+                      {newSettlement.role === 'Pengembalian COA' ? (
+                        <select required className={selectClass} value={newSettlement.name} onChange={e => setNewSettlement({...newSettlement, name: e.target.value})}>
+                          <option value="" disabled>-- Pilih COA --</option>
+                          <option value="Bahan Baku (COA)">Bahan Baku (COA)</option>
+                          <option value="Jasa Sablon (COA)">Jasa Sablon (COA)</option>
+                          <option value="Peralatan dan Perlengkapan (COA)">Peralatan dan Perlengkapan (COA)</option>
+                          <option value="Biaya Kirim Jasa EXPDC (COA)">Biaya Kirim Jasa EXPDC (COA)</option>
+                          <option value="Tenaga Kerja Packing (COA)">Tenaga Kerja Packing (COA)</option>
+                          <option value="Product Marketing (COA)">Product Marketing (COA)</option>
+                          <option value="Marketing (COA)">Marketing (COA)</option>
+                        </select>
+                      ) : (
+                        <input 
+                          type="text" 
+                          required 
+                          className={`${inputClass} ${newSettlement.role === 'Pengelola' || newSettlement.role === 'Investor' ? 'bg-neutral-100/80 cursor-not-allowed text-neutral-600' : ''}`} 
+                          value={newSettlement.name} 
+                          onChange={e => setNewSettlement({...newSettlement, name: e.target.value})} 
+                          placeholder="Nama lengkap..." 
+                          readOnly={newSettlement.role === 'Pengelola' || newSettlement.role === 'Investor'} 
+                        />
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-[12px] font-bold text-neutral-700 mb-2">Nominal (Rp)</label>
+                      <input type="number" required min="1" className={inputClass} value={newSettlement.amount} onChange={e => setNewSettlement({...newSettlement, amount: e.target.value})} placeholder="0" />
+                    </div>
+                    <button type="submit" className="w-full bg-neutral-900 hover:bg-black text-white text-[13px] font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98]">
+                      <CheckCircle size={16} /> Catat Pembayaran
+                    </button>
+                  </form>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-neutral-200/60 shadow-[0_4px_24px_rgba(0,0,0,0.02)] overflow-hidden">
+                  <div className="p-6 border-b border-neutral-100/80"><h3 className="text-lg font-semibold text-neutral-900 tracking-tight">Riwayat Pencairan Laba & COA</h3></div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse min-w-[500px]">
+                      <thead className="bg-transparent border-b border-neutral-200/60 text-neutral-500 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">
+                        <tr><th className="px-6 py-4">Tanggal</th><th className="px-6 py-4">Nama & Kategori</th><th className="px-6 py-4 text-right">Nominal Dibayarkan</th></tr>
+                      </thead>
+                      <tbody className="divide-y divide-neutral-100/80 text-[13px] font-semibold">
+                        {tableData.map((e) => (
+                          <tr key={e.id} className="hover:bg-neutral-50/50 transition-colors">
+                            <td className="px-6 py-4 text-neutral-500 tabular-nums">{e.date}</td>
+                            <td className="px-6 py-4 font-bold text-neutral-900">
+                              {e.name}
+                              {e.category === 'Pengembalian COA' && <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 text-[9px] rounded-md uppercase">COA</span>}
+                            </td>
+                            <td className="px-6 py-4 text-right text-emerald-600 tabular-nums">{formatRupiah(e.amount)}</td>
+                          </tr>
+                        ))}
+                        {tableData.length === 0 && (
+                          <tr><td colSpan="3" className="px-6 py-12 text-center text-neutral-400 font-medium">Belum ada riwayat pembayaran untuk periode ini.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            );
+          };
+
           return (
             <>
               {appMode === 'landing' ? (
@@ -2198,6 +2465,7 @@
                     {activeTab === 'sales' && <SalesView />}
                     {activeTab === 'expenses' && <ExpensesView />}
                     {activeTab === 'capital' && <CapitalReturnView />}
+                    {activeTab === 'settlement' && <SettlementView />}
                     {activeTab === 'stock' && <StockView />}
                   </div>
                 </div>
