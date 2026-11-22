@@ -141,6 +141,29 @@
           };
 
           useEffect(() => {
+            const normalizeDate = (dateStr) => {
+               if (!dateStr) return '';
+               let str = dateStr.toString().trim().split(' ')[0]; 
+               if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+               if (str.includes('/')) {
+                   const parts = str.split('/');
+                   if (parts.length === 3) {
+                       let p1 = parseInt(parts[0], 10);
+                       let p2 = parseInt(parts[1], 10);
+                       let y = parts[2];
+                       if (y && y.length === 4) {
+                           let d = p1, m = p2;
+                           if (p1 > 12) { d = p1; m = p2; } 
+                           else if (p2 > 12) { m = p1; d = p2; }
+                           return `${y}-${m.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}`;
+                       } else if (parts[0] && parts[0].length === 4) {
+                           return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+                       }
+                   }
+               }
+               return str;
+            };
+
             const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSMYPiHfpDtnOIMdbzSvbhUn1Fd1XFDX8s-smQLvGqgVoasE8t-r4DQPmzysVIj6PbRvkQY_tPbIRI_/pub?gid=0&single=true&output=csv";
             
             fetch(csvUrl)
@@ -248,7 +271,7 @@
                   /* Logika Baru: Menarik data berdasarkan 25 urutan kolom yang benar */
                   fetchedSales.push({
                     id: i,
-                    date: row[0] || '',
+                    date: normalizeDate(row[0]),
                     buyerName: row[1] || '-',
                     province: row[2] || '-',
                     area: row[3] || '-',
@@ -330,7 +353,7 @@
                     
                     fetchedExpenses.push({
                       id: i, 
-                      date: row[0] || '', 
+                      date: normalizeDate(row[0]), 
                       name: row[1] || '-', 
                       category: row[2] || '-', 
                       amount: amountVal 
@@ -399,7 +422,7 @@
                   if (!row[0]) continue;
 
                   fetchedCapAdd.push({
-                    id: i, date: row[0] || '', name: row[1] || '-', amount: parseIDR(row[2])
+                    id: i, date: normalizeDate(row[0]), name: row[1] || '-', amount: parseIDR(row[2])
                   });
                 }
                 setCapitalAdditions(fetchedCapAdd.reverse());
@@ -442,7 +465,7 @@
                   if (!row[0]) continue;
 
                   fetchedCapital.push({
-                    id: i, date: row[0] || '', keterangan: row[1] || '-', amount: parseIDR(row[2])
+                    id: i, date: normalizeDate(row[0]), keterangan: row[1] || '-', amount: parseIDR(row[2])
                   });
                 }
                 setCapitalReturns(fetchedCapital.reverse());
@@ -489,7 +512,7 @@
 
                   fetchedStocks.push({
                     id: i,
-                    date: row[0] || '',
+                    date: normalizeDate(row[0]),
                     pelaksana: row[1] || '-',
                     goodIssued: parseInt(row[2]) || 0,
                     goodReceived: parseInt(row[3]) || 0,
@@ -542,7 +565,7 @@
                   if (!row[0]) continue;
 
                   fetchedSettlements.push({
-                    id: i, date: row[0] || '', name: row[1] || '-', category: row[3] || '-', amount: parseIDR(row[4])
+                    id: i, date: normalizeDate(row[0]), name: row[1] || '-', category: row[3] || '-', amount: parseIDR(row[4])
                   });
                 }
                 setSettlements(fetchedSettlements.reverse());
@@ -2248,6 +2271,8 @@
           const SettlementView = () => {
             const [selectedMonth, setSelectedMonth] = useState('');
             const [newSettlement, setNewSettlement] = useState({ name: '', role: '', amount: '', date: new Date().toISOString().split('T')[0] });
+            const [isCoaDropdownOpen, setIsCoaDropdownOpen] = useState(false);
+            const [isPaidCoaDropdownOpen, setIsPaidCoaDropdownOpen] = useState(false);
 
             const availableMonths = useMemo(() => {
               const m = new Set([
@@ -2262,6 +2287,10 @@
 
             const totals = useMemo(() => {
               let tRev = 0, tHpp = 0, tPenyusutan = 0;
+              let coaBreakdown = {
+                "Bahan Baku (COA)": 0, "Jasa Sablon (COA)": 0, "Peralatan & Perlengkapan (COA)": 0,
+                "Biaya Kirim EXPDC (COA)": 0, "Tenaga Packing (COA)": 0, "Product Marketing (COA)": 0, "Marketing (COA)": 0
+              };
               
               let filteredSales = selectedMonth ? sales.filter(s => s.date.substring(0, 7) === selectedMonth) : sales;
               let filteredStocks = selectedMonth ? stocks.filter(s => s.date.substring(0, 7) === selectedMonth) : stocks;
@@ -2269,6 +2298,14 @@
               filteredSales.forEach(sale => {
                   tRev += sale.revenue;
                   tHpp += (sale.coaBahan || 0) + (sale.coaTenaga || 0) + (sale.coaPeralatan || 0) + (sale.coaKirim || 0) + (sale.coaTenagaPacking || 0) + (sale.coaProductMarketing || 0) + (sale.coaMarketing || 0);
+
+                  coaBreakdown["Bahan Baku (COA)"] += sale.coaBahan || 0;
+                  coaBreakdown["Jasa Sablon (COA)"] += sale.coaTenaga || 0;
+                  coaBreakdown["Peralatan & Perlengkapan (COA)"] += sale.coaPeralatan || 0;
+                  coaBreakdown["Biaya Kirim EXPDC (COA)"] += sale.coaKirim || 0;
+                  coaBreakdown["Tenaga Packing (COA)"] += sale.coaTenagaPacking || 0;
+                  coaBreakdown["Product Marketing (COA)"] += sale.coaProductMarketing || 0;
+                  coaBreakdown["Marketing (COA)"] += sale.coaMarketing || 0;
               });
               filteredStocks.forEach(stk => { tPenyusutan += stk.valueShrinkage || 0; });
 
@@ -2278,11 +2315,12 @@
               const tPengelola = tLabaBersih > 0 ? tLabaBersih * 0.70 : 0;
               const tInvestor = tLabaBersih > 0 ? tLabaBersih * 0.30 : 0;
 
-              return { tPengembalian, tPengelola, tInvestor, tTotalCoa: tHpp };
+              return { tPengembalian, tPengelola, tInvestor, tTotalCoa: tHpp, coaBreakdown };
             }, [sales, stocks, selectedMonth]);
 
             const paid = useMemo(() => {
               let pPengembalian = 0, pPengelola = 0, pInvestor = 0, pCoa = 0;
+              let paidCoaBreakdown = {};
               
               let filteredCap = selectedMonth ? capitalReturns.filter(c => c.date.substring(0, 7) === selectedMonth) : capitalReturns;
               let filteredSet = selectedMonth ? settlements.filter(s => s.date.substring(0, 7) === selectedMonth) : settlements;
@@ -2295,9 +2333,12 @@
                 }
                 if (e.category === 'Pengembalian COA') {
                   pCoa += e.amount;
+                  let cleanName = e.name.replace(' (Pengembalian COA)', '').trim();
+                  if (!paidCoaBreakdown[cleanName]) paidCoaBreakdown[cleanName] = 0;
+                  paidCoaBreakdown[cleanName] += e.amount;
                 }
               });
-              return { pPengembalian, pPengelola, pInvestor, pCoa };
+              return { pPengembalian, pPengelola, pInvestor, pCoa, paidCoaBreakdown };
             }, [capitalReturns, settlements, selectedMonth]);
 
             const handleAddSettlement = (e) => {
@@ -2361,12 +2402,73 @@
                     <div className="flex justify-between items-center text-sm font-semibold text-emerald-600"><span className="text-emerald-600/70">Telah Dikembalikan:</span> <span>{formatRupiah(paid.pPengembalian)}</span></div>
                     <div className="pt-3 mt-1 border-t border-neutral-100 flex justify-between items-center text-base font-bold text-neutral-900"><span className="text-neutral-600">Sisa Utang:</span> <span>{formatRupiah(totals.tPengembalian - paid.pPengembalian)}</span></div>
                   </div>
-                  <div className="bg-white p-6 rounded-2xl border border-neutral-200/60 shadow-[0_4px_24px_rgba(0,0,0,0.02)] flex flex-col gap-3 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-16 h-16 bg-blue-50 rounded-bl-[100px] -z-10"></div>
+                  <div className="bg-white p-6 rounded-2xl border border-neutral-200/60 shadow-[0_4px_24px_rgba(0,0,0,0.02)] flex flex-col gap-3 relative overflow-visible">
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-blue-50 rounded-bl-[100px] -z-10 pointer-events-none"></div>
                     <p className="text-[11px] font-bold text-blue-600 uppercase tracking-widest">Dana COA Terkumpul</p>
-                    <div className="flex justify-between items-center text-sm font-semibold"><span className="text-neutral-500">Total Biaya:</span> <span>{formatRupiah(totals.tTotalCoa)}</span></div>
-                    <div className="flex justify-between items-center text-sm font-semibold text-emerald-600"><span className="text-emerald-600/70">Telah Dicairkan:</span> <span>{formatRupiah(paid.pCoa)}</span></div>
-                    <div className="pt-3 mt-1 border-t border-neutral-100 flex justify-between items-center text-base font-bold text-neutral-900"><span className="text-neutral-600">Saldo COA:</span> <span>{formatRupiah(totals.tTotalCoa - paid.pCoa)}</span></div>
+                    <div className="flex justify-between items-center text-sm font-semibold relative z-20">
+                      <span className="text-neutral-500">Total Biaya:</span> 
+                      <div className="relative">
+                        <button onClick={() => setIsCoaDropdownOpen(!isCoaDropdownOpen)} className="flex items-center gap-1.5 focus:outline-none group">
+                          <span className="group-hover:text-neutral-600 transition-colors">{formatRupiah(totals.tTotalCoa)}</span>
+                          <div className="p-0.5 rounded bg-neutral-100 group-hover:bg-neutral-200 transition-colors">
+                            <ChevronDown size={14} className={`text-neutral-500 transition-transform ${isCoaDropdownOpen ? 'rotate-180' : ''}`} />
+                          </div>
+                        </button>
+                        {isCoaDropdownOpen && (
+                          <>
+                            <div className="fixed inset-0 z-30" onClick={() => setIsCoaDropdownOpen(false)}></div>
+                            <div className="absolute top-full right-0 mt-2 w-64 bg-white border border-neutral-200/80 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] z-40 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                              <div className="px-4 py-3 bg-neutral-50/80 border-b border-neutral-100 flex justify-between items-center">
+                                <span className="text-[11px] font-bold text-neutral-900 uppercase tracking-wider">Rincian COA</span>
+                                <span className="text-[10px] font-bold text-neutral-600 bg-neutral-200/60 px-2 py-1 rounded-md">{formatRupiah(totals.tTotalCoa)}</span>
+                              </div>
+                              <div className="p-2 flex flex-col gap-1 max-h-60 overflow-y-auto">
+                                {Object.entries(totals.coaBreakdown).map(([key, val]) => (
+                                  <div key={key} className="flex justify-between items-center px-3 py-2 hover:bg-neutral-50 rounded-xl transition-colors group/item">
+                                    <span className="text-[11px] font-semibold text-neutral-600 group-hover/item:text-neutral-900 mr-2 leading-tight">{key}</span>
+                                    <span className={`text-[11px] font-bold whitespace-nowrap ${val > 0 ? 'text-neutral-900' : 'text-neutral-400'}`}>{formatRupiah(val)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center text-sm font-semibold text-emerald-600 relative z-10">
+                      <span className="text-emerald-600/70">Telah Dicairkan:</span> 
+                      <div className="relative">
+                        <button onClick={() => setIsPaidCoaDropdownOpen(!isPaidCoaDropdownOpen)} className="flex items-center gap-1.5 focus:outline-none group">
+                          <span className="group-hover:text-emerald-700 transition-colors">{formatRupiah(paid.pCoa)}</span>
+                          <div className="p-0.5 rounded bg-emerald-50 group-hover:bg-emerald-100 transition-colors">
+                            <ChevronDown size={14} className={`text-emerald-600 transition-transform ${isPaidCoaDropdownOpen ? 'rotate-180' : ''}`} />
+                          </div>
+                        </button>
+                        {isPaidCoaDropdownOpen && (
+                          <>
+                            <div className="fixed inset-0 z-30" onClick={() => setIsPaidCoaDropdownOpen(false)}></div>
+                            <div className="absolute top-full right-0 mt-2 w-64 bg-white border border-neutral-200/80 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] z-40 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                              <div className="px-4 py-3 bg-emerald-50/50 border-b border-emerald-100 flex justify-between items-center">
+                                <span className="text-[11px] font-bold text-emerald-900 uppercase tracking-wider">Rincian Pencairan</span>
+                                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-1 rounded-md">{formatRupiah(paid.pCoa)}</span>
+                              </div>
+                              <div className="p-2 flex flex-col gap-1 max-h-60 overflow-y-auto">
+                                {Object.entries(paid.paidCoaBreakdown).map(([key, val]) => (
+                                  <div key={key} className="flex justify-between items-center px-3 py-2 hover:bg-neutral-50 rounded-xl transition-colors group/item">
+                                    <span className="text-[11px] font-semibold text-neutral-600 group-hover/item:text-neutral-900 mr-2 leading-tight">{key}</span>
+                                    <span className={`text-[11px] font-bold whitespace-nowrap ${val > 0 ? 'text-emerald-700' : 'text-neutral-400'}`}>{formatRupiah(val)}</span>
+                                  </div>
+                                ))}
+                                {Object.keys(paid.paidCoaBreakdown).length === 0 && (
+                                  <div className="px-3 py-4 text-center text-[11px] text-neutral-400 font-medium">Belum ada pencairan</div>
+                                )}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="pt-3 mt-1 border-t border-neutral-100 flex justify-between items-center text-base font-bold text-neutral-900 relative z-10"><span className="text-neutral-600">Saldo COA:</span> <span>{formatRupiah(totals.tTotalCoa - paid.pCoa)}</span></div>
                   </div>
                 </div>
 
